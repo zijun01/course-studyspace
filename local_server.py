@@ -232,6 +232,102 @@ def save_classification_review(course_number: int, decided_category: str, note: 
     return review
 
 
+def classification_board_payload(targets_payload: dict | None = None, review_payload: dict | None = None) -> dict:
+    targets_payload = targets_payload or json.loads(COURSE_TARGETS_PATH.read_text(encoding="utf-8"))
+    targets = targets_payload.get("targets", [])
+    review_payload = review_payload or load_classification_reviews()
+    reviews = review_payload.get("reviews", {})
+    categories = list(CATEGORIES)
+    for category in review_payload.get("custom_categories", []):
+        if category and category not in categories:
+            categories.append(category)
+    assignments = {}
+    items_by_id = {}
+    for target in targets:
+        course_number = str(target.get("course_id"))
+        review = reviews.get(course_number, {})
+        category = str(review.get("decided_category") or target.get("course_category") or "未分类")
+        if category not in categories:
+            categories.append(category)
+        assignments[course_number] = category
+        items_by_id[course_number] = {
+            **target,
+            "display_title": review.get("decided_title") or target.get("title") or f"课程 {course_number}",
+            "note": review.get("note", ""),
+            "reviewed": bool(review),
+        }
+    saved_orders = review_payload.get("category_orders", {})
+    columns = []
+    for category in categories:
+        valid_ids = [course_number for course_number in items_by_id if assignments[course_number] == category]
+        stored = [str(value) for value in saved_orders.get(category, []) if str(value) in valid_ids]
+        effective_ids = stored + [value for value in valid_ids if value not in stored]
+        columns.append({"category": category, "courses": [items_by_id[value] for value in effective_ids]})
+    return {"columns": columns, "total": len(targets), "updated_at": review_payload.get("updated_at")}
+
+
+def update_classification_board(payload: dict) -> dict:
+    action = str(payload.get("action") or "move")
+    with _classification_review_lock:
+        targets_payload = json.loads(COURSE_TARGETS_PATH.read_text(encoding="utf-8"))
+        review_payload = load_classification_reviews()
+        now = datetime.now(timezone.utc).isoformat()
+        if action == "create_category":
+            name = str(payload.get("name") or "").strip()
+            if not name or len(name) > 40:
+                raise ValueError("新类别名称不能为空，且不能超过 40 个字")
+            custom = review_payload.setdefault("custom_categories", [])
+            if name not in CATEGORIES and name not in custom:
+                custom.append(name)
+        elif action in {"move", "edit"}:
+            course_number = int(payload.get("course_id"))
+            target = next((item for item in targets_payload.get("targets", []) if int(item.get("course_id")) == course_number), None)
+            if not target:
+                raise ValueError("课程不在当前分类总账中")
+            existing_review = review_payload.setdefault("reviews", {}).get(str(course_number), {})
+            target_category = str(payload.get("target_category") or existing_review.get("decided_category") or target.get("course_category") or "").strip()
+            decided_title = str(payload.get("decided_title") or existing_review.get("decided_title") or target.get("title") or "").strip()
+            note = str(payload.get("note") if "note" in payload else existing_review.get("note", "")).strip()
+            if not target_category or len(target_category) > 40:
+                raise ValueError("目标类别无效")
+            if not decided_title or len(decided_title) > 200 or len(note) > 2000:
+                raise ValueError("课程名称或说明过长")
+            review_payload["reviews"][str(course_number)] = {
+                **existing_review,
+                "course_id": course_number,
+                "title": target.get("title", ""),
+                "album_id": target.get("album_id"),
+                "album_title": target.get("album_title", ""),
+                "original_category": target.get("course_category", ""),
+                "decided_category": target_category,
+                "decided_title": decided_title,
+                "note": note,
+                "reviewed_at": now,
+            }
+            custom = review_payload.setdefault("custom_categories", [])
+            if target_category not in CATEGORIES and target_category not in custom:
+                custom.append(target_category)
+            if action == "move":
+                target_index = int(payload.get("target_index", 0))
+                orders = review_payload.setdefault("category_orders", {})
+                moving_id = str(course_number)
+                for category, values in list(orders.items()):
+                    orders[category] = [str(value) for value in values if str(value) != moving_id]
+                board = classification_board_payload(targets_payload, review_payload)
+                target_column = next(column for column in board["columns"] if column["category"] == target_category)
+                target_ids = [str(item.get("course_id")) for item in target_column["courses"] if str(item.get("course_id")) != moving_id]
+                target_ids.insert(max(0, min(target_index, len(target_ids))), moving_id)
+                orders[target_category] = target_ids
+        else:
+            raise ValueError("不支持的看板操作")
+        review_payload["schema_version"] = "1.0"
+        review_payload["updated_at"] = now
+        temp_path = CLASSIFICATION_REVIEW_PATH.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps(review_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(CLASSIFICATION_REVIEW_PATH)
+    return classification_board_payload(targets_payload, review_payload)
+
+
 def safe_title(title: str) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", title, flags=re.UNICODE).strip("-")
     return cleaned[:60] or "course"
@@ -849,6 +945,12 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, json.JSONDecodeError) as exc:
                 self._json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/corpus/classification-board":
+            try:
+                self._json(classification_board_payload())
+            except (OSError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/corpus/dashboard":
             try:
                 body = (CORPUS_DIR / "dashboard.html").read_bytes()
@@ -953,6 +1055,14 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
+        if urlparse(self.path).path == "/corpus/classification-board":
+            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                payload = json.loads(self.rfile.read(length))
+                self._json({"ok": True, **update_classification_board(payload)})
+            except (json.JSONDecodeError, TypeError, ValueError, OSError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if urlparse(self.path).path == "/corpus/classification-review":
             length = int(self.headers.get("Content-Length", "0"))
             try:
