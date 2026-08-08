@@ -767,8 +767,17 @@ def final_course_category_map() -> dict[int, str]:
     }
 
 
+def deferred_category_rank(category: str | None) -> int:
+    """Ordinary courses first, Chat AI courses next, seven-year livestreams last."""
+    if category == "相约七年直播":
+        return 2
+    if category == "AI课-Chat版":
+        return 1
+    return 0
+
+
 def transcription_pending_order(paths) -> list[Path]:
-    """Priority first, audio before video, but keep 相约七年直播 behind all other courses."""
+    """Priority/audio ranking within the user's three-stage category order."""
     candidates = [(path, True) for path in paths["priority"].glob("*.json")]
     candidates += [(path, False) for path in paths["pending"].glob("*.json")]
     if not candidates:
@@ -780,16 +789,16 @@ def transcription_pending_order(paths) -> list[Path]:
             payload = json.loads(path.read_text(encoding="utf-8"))
             has_video = any(item.get("category") == "video" for item in payload.get("items", []))
             course_number = int(payload.get("course_id", path.stem))
-            is_last_category = categories.get(course_number, payload.get("course_category")) == "相约七年直播"
+            category_rank = deferred_category_rank(categories.get(course_number, payload.get("course_category")))
             within_queue = -course_number if is_priority else course_number
-            ranked.append(((1 if is_last_category else 0, 0 if is_priority else 1, 1 if has_video else 0, within_queue), path))
+            ranked.append(((category_rank, 0 if is_priority else 1, 1 if has_video else 0, within_queue), path))
         except (OSError, ValueError, json.JSONDecodeError):
             ranked.append(((0, 1, 1, 10**12), path))
     return [path for _, path in sorted(ranked, key=lambda row: row[0])]
 
 
 def enhancement_pending_order(paths) -> list[Path]:
-    """Keep 相约七年直播 enhancement behind all other course categories."""
+    """Use the same three-stage category order for Codex enhancement."""
     candidates = [(path, True) for path in paths["enhance_priority"].glob("*.json")]
     candidates += [(path, False) for path in paths["enhance_pending"].glob("*.json")]
     if not candidates:
@@ -800,9 +809,9 @@ def enhancement_pending_order(paths) -> list[Path]:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             course_number = int(payload.get("course_id", path.stem))
-            is_last_category = categories.get(course_number, payload.get("course_category")) == "相约七年直播"
+            category_rank = deferred_category_rank(categories.get(course_number, payload.get("course_category")))
             within_queue = -course_number if is_priority else course_number
-            ranked.append(((1 if is_last_category else 0, 0 if is_priority else 1, within_queue), path))
+            ranked.append(((category_rank, 0 if is_priority else 1, within_queue), path))
         except (OSError, ValueError, json.JSONDecodeError):
             ranked.append(((0, 1, 10**12), path))
     return [path for _, path in sorted(ranked, key=lambda row: row[0])]
