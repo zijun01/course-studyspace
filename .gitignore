@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv*/
+.env
+.env.*
+!.env.example
+data/
+library/
+models/
+research/
+ai-build-log/
+runtime/
+*.log
+auth.json
+**/auth.json
