@@ -759,17 +759,52 @@ def course_layers_complete(url: str) -> bool:
     return jsonl_has_records(directory / "transcripts" / "raw.jsonl") and jsonl_has_records(directory / "transcripts" / "reading.jsonl")
 
 
-def audio_first_pending(paths) -> list[Path]:
-    """Keep every course containing video behind the audio-only backlog."""
+def final_course_category_map() -> dict[int, str]:
+    board = classification_board_payload()
+    return {
+        int(course["course_id"]): column["category"]
+        for column in board["columns"] for course in column["courses"]
+    }
+
+
+def transcription_pending_order(paths) -> list[Path]:
+    """Priority first, audio before video, but keep 相约七年直播 behind all other courses."""
+    candidates = [(path, True) for path in paths["priority"].glob("*.json")]
+    candidates += [(path, False) for path in paths["pending"].glob("*.json")]
+    if not candidates:
+        return []
+    categories = final_course_category_map()
     ranked = []
-    for path in paths["pending"].glob("*.json"):
+    for path, is_priority in candidates:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             has_video = any(item.get("category") == "video" for item in payload.get("items", []))
             course_number = int(payload.get("course_id", path.stem))
-            ranked.append(((1 if has_video else 0, course_number), path))
+            is_last_category = categories.get(course_number, payload.get("course_category")) == "相约七年直播"
+            within_queue = -course_number if is_priority else course_number
+            ranked.append(((1 if is_last_category else 0, 0 if is_priority else 1, 1 if has_video else 0, within_queue), path))
         except (OSError, ValueError, json.JSONDecodeError):
-            ranked.append(((1, 10**12), path))
+            ranked.append(((0, 1, 1, 10**12), path))
+    return [path for _, path in sorted(ranked, key=lambda row: row[0])]
+
+
+def enhancement_pending_order(paths) -> list[Path]:
+    """Keep 相约七年直播 enhancement behind all other course categories."""
+    candidates = [(path, True) for path in paths["enhance_priority"].glob("*.json")]
+    candidates += [(path, False) for path in paths["enhance_pending"].glob("*.json")]
+    if not candidates:
+        return []
+    categories = final_course_category_map()
+    ranked = []
+    for path, is_priority in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            course_number = int(payload.get("course_id", path.stem))
+            is_last_category = categories.get(course_number, payload.get("course_category")) == "相约七年直播"
+            within_queue = -course_number if is_priority else course_number
+            ranked.append(((1 if is_last_category else 0, 0 if is_priority else 1, within_queue), path))
+        except (OSError, ValueError, json.JSONDecodeError):
+            ranked.append(((0, 1, 10**12), path))
     return [path for _, path in sorted(ranked, key=lambda row: row[0])]
 
 
@@ -780,7 +815,7 @@ def bulk_course_worker():
     for interrupted in paths["processing"].glob("*.json"):
         interrupted.replace(paths["pending"] / interrupted.name)
     while True:
-        pending = sorted(paths["priority"].glob("*.json"), reverse=True) or audio_first_pending(paths)
+        pending = transcription_pending_order(paths)
         if not pending:
             time.sleep(2)
             continue
@@ -834,7 +869,7 @@ def bulk_enhancement_worker():
         except (OSError, json.JSONDecodeError):
             continue
     while True:
-        pending = sorted(paths["enhance_priority"].glob("*.json"), reverse=True) or sorted(paths["enhance_pending"].glob("*.json"))
+        pending = enhancement_pending_order(paths)
         if not pending:
             time.sleep(2)
             continue
