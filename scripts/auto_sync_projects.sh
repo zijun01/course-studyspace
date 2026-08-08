@@ -63,4 +63,3 @@ while IFS= read -r repo; do
   [[ -z "$repo" || "$repo" == \#* ]] && continue
   sync_repo "${repo/#\~/$HOME}" || true
 done < "$repo_list"
-
