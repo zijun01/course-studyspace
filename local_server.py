@@ -237,7 +237,8 @@ def classification_board_payload(targets_payload: dict | None = None, review_pay
     targets = targets_payload.get("targets", [])
     review_payload = review_payload or load_classification_reviews()
     reviews = review_payload.get("reviews", {})
-    categories = list(CATEGORIES)
+    renames = review_payload.get("category_renames", {})
+    categories = [str(renames.get(category, category)) for category in CATEGORIES]
     for category in review_payload.get("custom_categories", []):
         if category and category not in categories:
             categories.append(category)
@@ -249,6 +250,7 @@ def classification_board_payload(targets_payload: dict | None = None, review_pay
         course_number = str(target.get("course_id"))
         review = reviews.get(course_number, {})
         category = str(review.get("decided_category") or target.get("course_category") or "未分类")
+        category = str(renames.get(category, category))
         if category not in categories:
             categories.append(category)
         assignments[course_number] = category
@@ -278,9 +280,38 @@ def update_classification_board(payload: dict) -> dict:
             name = str(payload.get("name") or "").strip()
             if not name or len(name) > 40:
                 raise ValueError("新类别名称不能为空，且不能超过 40 个字")
+            current_names = [column["category"] for column in classification_board_payload(targets_payload, review_payload)["columns"]]
+            if name in current_names:
+                raise ValueError("已经存在同名类别")
             custom = review_payload.setdefault("custom_categories", [])
             if name not in CATEGORIES and name not in custom:
                 custom.append(name)
+        elif action == "rename_category":
+            old_name = str(payload.get("old_name") or "").strip()
+            new_name = str(payload.get("new_name") or "").strip()
+            if not old_name or not new_name or len(new_name) > 40:
+                raise ValueError("类别名称不能为空，且不能超过 40 个字")
+            current_board = classification_board_payload(targets_payload, review_payload)
+            current_names = [column["category"] for column in current_board["columns"]]
+            if old_name not in current_names:
+                raise ValueError("找不到要改名的类别")
+            if new_name != old_name and new_name in current_names:
+                raise ValueError("已经存在同名类别")
+            renames = review_payload.setdefault("category_renames", {})
+            for source, value in list(renames.items()):
+                if value == old_name:
+                    renames[source] = new_name
+            if old_name in CATEGORIES:
+                renames[old_name] = new_name
+            custom = review_payload.setdefault("custom_categories", [])
+            review_payload["custom_categories"] = [new_name if value == old_name else value for value in custom]
+            for review in review_payload.setdefault("reviews", {}).values():
+                if review.get("decided_category") == old_name:
+                    review["decided_category"] = new_name
+            orders = review_payload.setdefault("category_orders", {})
+            if old_name in orders:
+                orders[new_name] = orders.pop(old_name)
+            review_payload["category_order"] = [new_name if value == old_name else value for value in review_payload.get("category_order", [])]
         elif action == "reorder_categories":
             requested = [str(value).strip() for value in payload.get("categories", []) if str(value).strip()]
             if len(requested) != len(set(requested)):
