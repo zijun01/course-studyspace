@@ -1,9 +1,18 @@
 #!/bin/zsh
 set -euo pipefail
 
-# A GUI launch agent can inherit a stale local proxy. GitHub synchronization
-# should use the current direct network path instead of a dead localhost port.
-unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+# The user launch environment can retain an old local proxy. Prefer the active
+# local proxy when present; otherwise try the direct network path.
+if /usr/bin/nc -z 127.0.0.1 7890 >/dev/null 2>&1; then
+  export HTTP_PROXY="http://127.0.0.1:7890"
+  export HTTPS_PROXY="http://127.0.0.1:7890"
+  export ALL_PROXY="socks5://127.0.0.1:7890"
+  export http_proxy="$HTTP_PROXY"
+  export https_proxy="$HTTPS_PROXY"
+  export all_proxy="$ALL_PROXY"
+else
+  unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+fi
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
