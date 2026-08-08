@@ -37,7 +37,6 @@
   </div>
   <div id="review-view" class="hidden"><div class="board-toolbar"><div><h2>拖拽课程看板</h2><p>拖到其他列可改分类；在同一列上下拖动可改顺序。放下后自动保存。</p></div><span class="board-saving" id="board-saving">正在读取 323 门课程…</span></div><div class="board-wrap"><div class="board" id="classification-board"></div></div></div>
 </main><script>
-const order=["AI课","写作课","自学课","专注课","思考课","财富课","家庭教育课","教练课","英语课"];
 const byId=id=>document.getElementById(id);
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function refresh(){
@@ -47,7 +46,7 @@ async function refresh(){
     for(const id of ['done','pending','processing','failed'])byId(id).textContent=d[id==='done'?'complete':id];
     function show(prefix,c){byId(`${prefix}-title`).textContent=c?c.title:'队列暂时空闲';const waiting=prefix==='enhancement'&&c?` · 后面 ${c.waiting||0} 门待润色`:'';const chars=prefix==='enhancement'&&c?.raw_audio_characters!=null?` · 原始音频文字 ${Number(c.raw_audio_characters).toLocaleString('zh-CN')} 字`:'';byId(`${prefix}-meta`).textContent=c?`${c.category} · ${c.album} · 后台编号 ${c.course_id}${chars}${waiting}`:'';byId(`${prefix}-message`).textContent=c?c.message:'等待下一项';byId(`${prefix}-media`).style.width=`${Math.round((c?.media_progress||0)*100)}%`}
     show('transcription',d.current_transcription);show('enhancement',d.current_enhancement);
-    byId('categories').innerHTML=order.filter(k=>d.categories[k]).map(k=>{const x=d.categories[k],p=x.complete/x.total*100;return `<article class="card category"><div class="row"><b>${esc(k)}</b><span>${x.complete} / ${x.total}</span></div><div class="track"><div class="fill" style="width:${p}%"></div></div></article>`}).join('');
+    byId('categories').innerHTML=(d.category_order||Object.keys(d.categories)).filter(k=>d.categories[k]).map(k=>{const x=d.categories[k],p=x.complete/x.total*100;return `<article class="card category"><div class="row"><b>${esc(k)}</b><span>${x.complete} / ${x.total}</span></div><div class="track"><div class="fill" style="width:${p}%"></div></div></article>`}).join('');
     byId('updated').textContent=`每2秒自动刷新 · ${new Date().toLocaleTimeString('zh-CN')}`;
   }catch(e){byId('transcription-message').innerHTML=`<span class="error">${esc(e.message)}</span>`}
 }

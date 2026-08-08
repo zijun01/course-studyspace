@@ -12,6 +12,7 @@ research/*
 !research/corpus/
 research/corpus/*
 !research/corpus/dashboard.html
+!research/corpus/course-classification-review.json
 ai-build-log/
 runtime/
 *.log

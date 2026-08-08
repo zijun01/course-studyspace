@@ -866,6 +866,12 @@ def bulk_queue_status():
 def bulk_dashboard_status():
     targets_payload = json.loads(COURSE_TARGETS_PATH.read_text(encoding="utf-8"))
     targets = targets_payload.get("targets", [])
+    board = classification_board_payload(targets_payload, load_classification_reviews())
+    final_courses = {
+        int(course["course_id"]): {"category": column["category"], "title": course.get("display_title") or course.get("title")}
+        for column in board["columns"] for course in column["courses"]
+    }
+    category_order = [column["category"] for column in board["columns"]]
     paths = queue_paths()
     states = {}
     for state, directory in paths.items():
@@ -886,7 +892,7 @@ def bulk_dashboard_status():
         elif state is None:
             state = "not_harvested"
             not_harvested += 1
-        category = target["course_category"]
+        category = final_courses.get(course_number, {}).get("category", target["course_category"])
         bucket = categories.setdefault(category, {"total": 0, "complete": 0, "failed": 0, "processing": 0, "pending": 0})
         bucket["total"] += 1
         display_state = "pending" if state == "priority" else ("processing" if state in {"processing", "enhance_priority", "enhance_pending", "enhancing"} else state)
@@ -914,9 +920,11 @@ def bulk_dashboard_status():
                         raw_audio_characters = audio_character_count(raw_rows)
                     except (OSError, json.JSONDecodeError):
                         pass
+            course_number = int(payload.get("course_id"))
+            final = final_courses.get(course_number, {})
             return {
-                "course_id": payload.get("course_id"), "title": payload.get("course_title"),
-                "category": payload.get("course_category"), "album": payload.get("album_title"),
+                "course_id": course_number, "title": final.get("title") or payload.get("course_title"),
+                "category": final.get("category") or payload.get("course_category"), "album": payload.get("album_title"),
                 "status": job.get("status", "preparing"), "message": job.get("message", "准备处理"),
                 "media_progress": job.get("media_progress", 0), "completed_media": job.get("completed", 0),
                 "total_media": job.get("total", 0),
@@ -941,6 +949,7 @@ def bulk_dashboard_status():
         "percent": round(complete / max(1, len(targets)) * 100, 2),
         "current": current, "current_transcription": current_transcription,
         "current_enhancement": current_enhancement, "categories": categories,
+        "category_order": category_order,
     }
 
 
