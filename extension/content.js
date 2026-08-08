@@ -71,7 +71,7 @@ root.innerHTML = `
       <section class="view" data-panel="agent">
         <h2 class="column-title">课程 Agent</h2>
         <div class="chat"><div class="bubble system">右侧连接到 <span data-category-label>AI课</span> 的本机 Codex 工作区。它可以读取课程、修改工作区文件、运行工具；需要额外权限时会在这里请求你的批准。</div></div>
-        <div class="composer"><div class="selection"></div><textarea placeholder="问这节课，或让 Agent 处理划选内容…"></textarea><div class="send-row"><span class="hint">回答只使用当前课程文字稿</span><button class="send">发送</button></div></div>
+        <div class="composer"><div class="selection"></div><textarea placeholder="问课程内容，也可以随手问任何相关问题…"></textarea><div class="send-row"><span class="hint">已携带当前课程上下文 · 可自由提问</span><button class="send">发送</button></div></div>
       </section>
     </div>
   </aside>`;
@@ -652,7 +652,7 @@ function resetAgentView() {
   textarea.value = "";
   streamingBubble = null;
   codexEventCursor = Date.now() / 1000;
-  chat.innerHTML = `<div class="bubble system">已切换到当前课程。这里仍连接到 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 的 Codex 工作区；同类课程的长期上下文会保留，但本页只显示当前课程的新对话。</div>`;
+  chat.innerHTML = `<div class="bubble system">已携带当前课程上下文，并连接到 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 的 Codex 工作区。你既可以追问老师讲的内容，也可以询问相关背景知识，或让 Agent 执行任务。</div>`;
   const sendButton = root.querySelector(".send");
   sendButton.disabled = false;
   sendButton.textContent = "发送";

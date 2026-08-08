@@ -186,13 +186,38 @@ class CodexBridge:
             )
         return None
 
+    def _course_dir(self, category: str, course_id: int | None):
+        if course_id is None:
+            return None
+        courses_dir = LIBRARY / category / "courses"
+        if not courses_dir.is_dir():
+            return None
+        wanted = str(course_id)
+        for metadata_path in courses_dir.glob("*/course.json"):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if str(metadata.get("course_id")) == wanted:
+                return metadata_path.parent
+        return None
+
     def send_message(self, category: str, text: str, course_id: int | None = None, selection: str = ""):
         result = self.ensure_thread(category)
         thread_id = result["thread"]["id"]
-        context = f"当前课程 ID：{course_id}\n" if course_id else ""
+        course_dir = self._course_dir(category, course_id)
+        context = (
+            "你是课程学习 Agent。当前课程资料是回答时可优先使用的额外上下文，不是你的知识边界。\n"
+            "当问题涉及课程时，先结合课程文字稿理解老师原意；你也可以使用通用知识解释概念、补充背景、比较观点，或按用户要求执行其他任务。\n"
+            "如果补充内容并非老师在本课明确讲过，请清楚区分‘课程内容’与‘补充说明’，不要把外部知识冒充老师原话。\n"
+        )
+        if course_id:
+            context += f"当前课程 ID：{course_id}\n"
+        if course_dir:
+            context += f"当前课程资料目录：{course_dir}\n"
         if selection:
             context += f"用户当前划选的课程原文：\n{selection}\n\n"
-        prompt = context + text
+        prompt = context + "\n用户的问题或任务：\n" + text
         return self.request("turn/start", {
             "threadId": thread_id,
             "input": [{"type": "text", "text": prompt}],
