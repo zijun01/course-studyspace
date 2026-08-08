@@ -34,6 +34,7 @@ root.innerHTML = `
     .view { min-width:0; min-height:0; display:flex; flex-direction:column; }
     .view + .view { border-left:1px solid #dedbd2; }
     .column-title { margin:0; padding:12px 18px 10px; border-bottom:1px solid #e9e5dc; font-size:13px; letter-spacing:.04em; color:#6f6a61; }
+    .transcript-count { margin-left:8px; color:#8b857b; font-size:11px; font-weight:500; letter-spacing:0; }
     .transcript { overflow:auto; padding:15px 18px 100px; }
     .empty { margin:46px 18px; padding:22px; text-align:center; color:#858075; border:1px dashed #d5d0c5; border-radius:14px; }
     .segment { display:grid; grid-template-columns:100px 1fr; gap:10px; padding:10px 8px; margin:0 -8px; border-bottom:1px solid #efebe3; border-radius:8px; cursor:pointer; transition:background .15s ease, box-shadow .15s ease; }
@@ -66,7 +67,7 @@ root.innerHTML = `
       <div class="progress-wrap" hidden><div class="progress-track"><div class="progress-fill"></div></div><span class="progress-label">0%</span></div>
     </header>
     <div class="workspace">
-      <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿</h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
+      <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿 <small class="transcript-count"></small></h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
       <section class="view" data-panel="agent">
         <h2 class="column-title">课程 Agent</h2>
         <div class="chat"><div class="bubble system">右侧连接到 <span data-category-label>AI课</span> 的本机 Codex 工作区。它可以读取课程、修改工作区文件、运行工具；需要额外权限时会在这里请求你的批准。</div></div>
@@ -86,6 +87,7 @@ const progressFill = root.querySelector(".progress-fill");
 const progressLabel = root.querySelector(".progress-label");
 const categorySelect = root.querySelector(".category");
 const transcript = root.querySelector(".transcript");
+const transcriptCount = root.querySelector(".transcript-count");
 const textarea = root.querySelector("textarea");
 const selectionLabel = root.querySelector(".selection");
 const chat = root.querySelector(".chat");
@@ -444,6 +446,13 @@ async function loadTranscript() {
       audio_url: record.audio_url || ""
     })));
     renderTranscript();
+    const hasRawCharacters = data.course?.raw_audio_characters != null;
+    const hasReadingCharacters = data.course?.reading_audio_characters != null;
+    const rawCharacters = Number(data.course?.raw_audio_characters);
+    const readingCharacters = Number(data.course?.reading_audio_characters);
+    transcriptCount.textContent = hasReadingCharacters && Number.isFinite(readingCharacters)
+      ? `润色后音频文字 ${readingCharacters.toLocaleString("zh-CN")} 字${Number.isFinite(rawCharacters) ? ` · 原始 ${rawCharacters.toLocaleString("zh-CN")} 字` : ""}`
+      : hasRawCharacters && Number.isFinite(rawCharacters) ? `原始音频文字 ${rawCharacters.toLocaleString("zh-CN")} 字` : "";
     if (data.records.length) {
       processing = false;
       needsEnhancement = data.course?.enhancement === "fallback";

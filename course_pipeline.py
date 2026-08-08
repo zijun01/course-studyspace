@@ -76,6 +76,15 @@ def join_text(parts: list[str]) -> str:
     return result
 
 
+def audio_character_count(rows: list[dict]) -> int:
+    """Count spoken letters and numbers; exclude punctuation and page text."""
+    return sum(
+        sum(1 for character in str(row.get("text", "")) if character.isalnum())
+        for row in rows
+        if row.get("source_type") == "audio_transcript"
+    )
+
+
 def clean_fallback(text: str) -> str:
     text = re.sub(r"(^|[\s，。！？；])(?:嗯+|呃+|额+|唔+)(?=[\s，。！？；]|$)", r"\1", text)
     text = re.sub(r"(?<=[\u4e00-\u9fff])(?:啊+|哈+|呢)(?=[\u4e00-\u9fff，。！？、\s]|$)", "", text)
@@ -466,15 +475,20 @@ def archive_raw(payload: dict, raw_rows: list[dict]) -> dict:
     transcripts.mkdir(parents=True, exist_ok=True)
     (directory / "notes").mkdir(exist_ok=True)
     write_jsonl(transcripts / "raw.jsonl", raw_rows)
+    raw_audio_characters = audio_character_count(raw_rows)
     metadata = {
         "schema_version": "1.0", "course_id": numeric_course_id(payload["course_url"]), "title": title,
         "category": category, "source_url": payload["course_url"],
         "updated_at": datetime.now(timezone.utc).isoformat(), "transcription": "complete",
         "enhancement": "pending", "enhancement_error": None,
+        "raw_audio_characters": raw_audio_characters,
     }
     atomic_text(directory / "course.json", json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     update_catalog(metadata)
-    return {"directory": str(directory), "raw_segments": len(raw_rows), "enhancement": "pending"}
+    return {
+        "directory": str(directory), "raw_segments": len(raw_rows), "enhancement": "pending",
+        "raw_audio_characters": raw_audio_characters,
+    }
 
 
 def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, status=None) -> dict:
@@ -490,7 +504,7 @@ def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, s
     error = None
     enhancement_started = time.monotonic()
     groups = audio_groups(raw_rows)
-    audio_characters = sum(len(group["raw_text"]) for group in groups)
+    audio_characters = audio_character_count(raw_rows)
     use_parallel = audio_characters >= 4000 and len(groups) >= 12
     pipeline_name = "whole-course-brief-plus-3-parallel-chunks-v1" if use_parallel else "short-course-single-pass-v1"
     try:
@@ -514,6 +528,7 @@ def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, s
         polished = None
         error = str(exc)
     reading, enhancement = build_reading(raw_rows, polished)
+    reading_audio_characters = audio_character_count(reading)
     write_jsonl(transcripts / "reading.jsonl", reading)
     atomic_text(transcripts / "reading.md", markdown(reading, title))
     audio_urls = {int(item["id"]): item.get("url", "") for item in payload.get("items", []) if item.get("category") in {"audio", "video"} and item.get("id") is not None}
@@ -525,6 +540,8 @@ def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, s
         "enhancement_pipeline": pipeline_name if polished is not None else "fallback",
         "enhancement_elapsed_seconds": round(time.monotonic() - enhancement_started, 1),
         "enhancement_error": error,
+        "raw_audio_characters": audio_characters,
+        "reading_audio_characters": reading_audio_characters,
     }
     atomic_text(directory / "course.json", json.dumps(metadata, ensure_ascii=False, indent=2) + "\n")
     update_catalog(metadata)
@@ -533,4 +550,6 @@ def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, s
         "enhancement_pipeline": metadata["enhancement_pipeline"],
         "enhancement_elapsed_seconds": metadata["enhancement_elapsed_seconds"],
         "enhancement_error": error,
+        "raw_audio_characters": audio_characters,
+        "reading_audio_characters": reading_audio_characters,
     }

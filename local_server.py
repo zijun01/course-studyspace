@@ -29,7 +29,7 @@ try:
 except ImportError:
     whisper = None
 from codex_bridge import bridge as codex_bridge
-from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, find_archived_course
+from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course
 
 
 HOST = "127.0.0.1"
@@ -438,6 +438,8 @@ def run_enhancement_job(job_id: str, payload: dict, cache_path: Path):
             raise RuntimeError("没有找到这节课的原始稿")
         raw_path = directory / "transcripts" / "raw.jsonl"
         raw_rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        raw_audio_characters = audio_character_count(raw_rows)
+        set_job(job_id, raw_audio_characters=raw_audio_characters)
         payload = {
             **payload,
             "course_title": payload.get("course_title") or metadata.get("title") or directory.name,
@@ -448,6 +450,7 @@ def run_enhancement_job(job_id: str, payload: dict, cache_path: Path):
             status=lambda state, message, progress=0.0, elapsed=0.0, limit=300: set_job(
                 job_id, status=state, message=message, media_progress=progress,
                 enhancement_elapsed=round(elapsed, 1), enhancement_limit=round(limit, 1),
+                raw_audio_characters=raw_audio_characters,
             ),
         )
         message = "语义阅读稿已完成" if result["enhancement"] == "codex" else "Codex 润色仍不可用，已保留本机文字稿"
@@ -645,12 +648,27 @@ def bulk_dashboard_status():
             payload = json.loads(processing_files[0].read_text(encoding="utf-8"))
             with _jobs_lock:
                 job = next((dict(value) for value in reversed(list(_jobs.values())) if value.get("course_url") == payload.get("course_url")), {})
+            raw_audio_characters = job.get("raw_audio_characters")
+            reading_audio_characters = job.get("reading_audio_characters")
+            if raw_audio_characters is None or reading_audio_characters is None:
+                directory, metadata = find_archived_course(payload.get("course_url", ""))
+                raw_audio_characters = metadata.get("raw_audio_characters", raw_audio_characters)
+                reading_audio_characters = metadata.get("reading_audio_characters", reading_audio_characters)
+                if directory and raw_audio_characters is None:
+                    try:
+                        raw_path = directory / "transcripts" / "raw.jsonl"
+                        raw_rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                        raw_audio_characters = audio_character_count(raw_rows)
+                    except (OSError, json.JSONDecodeError):
+                        pass
             return {
                 "course_id": payload.get("course_id"), "title": payload.get("course_title"),
                 "category": payload.get("course_category"), "album": payload.get("album_title"),
                 "status": job.get("status", "preparing"), "message": job.get("message", "准备处理"),
                 "media_progress": job.get("media_progress", 0), "completed_media": job.get("completed", 0),
                 "total_media": job.get("total", 0),
+                "raw_audio_characters": raw_audio_characters,
+                "reading_audio_characters": reading_audio_characters,
             }
         except (OSError, json.JSONDecodeError):
             return None
@@ -716,6 +734,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(HTTPStatus.OK)
                 self._cors()
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
@@ -743,7 +762,20 @@ class Handler(BaseHTTPRequestHandler):
                         records.append(json.loads(line))
                     except json.JSONDecodeError:
                         continue
-            _, metadata = find_archived_course(url)
+            directory, metadata = find_archived_course(url)
+            if directory:
+                if metadata.get("raw_audio_characters") is None:
+                    try:
+                        raw_rows = [json.loads(line) for line in (directory / "transcripts" / "raw.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+                        metadata["raw_audio_characters"] = audio_character_count(raw_rows)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                if metadata.get("reading_audio_characters") is None:
+                    try:
+                        reading_rows = [json.loads(line) for line in (directory / "transcripts" / "reading.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+                        metadata["reading_audio_characters"] = audio_character_count(reading_rows)
+                    except (OSError, json.JSONDecodeError):
+                        pass
             self._json({"records": records, "course": metadata})
             return
         if parsed.path == "/course-status":

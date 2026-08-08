@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>李笑来课程预处理进度</title>
+  <style>
+    :root{color-scheme:light;--ink:#23231f;--muted:#78756c;--paper:#f5f2eb;--card:#fffdf8;--line:#ddd7ca;--green:#376b5d;--gold:#a8783f;--red:#a84b44}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
+    main{width:min(1080px,calc(100% - 32px));margin:40px auto 80px}.eyebrow{color:var(--green);font-weight:700;letter-spacing:.12em;font-size:12px}
+    h1{font-size:30px;margin:5px 0 8px}.sub{color:var(--muted);margin:0 0 26px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 8px 30px rgba(45,40,30,.05)}
+    .hero{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:18px}.number{font-size:54px;font-weight:750;line-height:1}.number small{font-size:18px;color:var(--muted);font-weight:500}
+    .track{height:16px;background:#e5e0d5;border-radius:999px;overflow:hidden;margin:18px 0 10px}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--green),#6f9b82);transition:width .6s}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{padding:13px;border-radius:12px;background:#f3efe6}.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:12px}
+    h2{font-size:16px;margin:0 0 14px}.current{border-left:5px solid var(--gold)}.current-title{font-size:21px;font-weight:700}.message{color:var(--muted);margin-top:8px}.mini-track{height:8px;background:#e8e3d9;border-radius:9px;overflow:hidden;margin-top:15px}.mini-fill{height:100%;background:var(--gold);width:0;transition:width .5s}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}.category .row{display:flex;justify-content:space-between;gap:12px}.category .track{height:8px;margin:10px 0 0}.error{color:var(--red)}footer{margin-top:18px;color:var(--muted);font-size:12px;text-align:right}
+    @media(max-width:760px){.hero,.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body><main>
+  <div class="eyebrow">COURSE STUDYSPACE · 本机实时状态</div>
+  <h1>李笑来课程预处理</h1><p class="sub">网页原文保存 → 最高质量本机转录 → Codex 整课语义润色</p>
+  <section class="hero">
+    <div class="card"><div class="number"><span id="percent">0</span>% <small id="fraction">0 / 321</small></div><div class="track"><div class="fill" id="overall"></div></div><div class="stats"><div class="stat"><b id="done">0</b><span>已完成</span></div><div class="stat"><b id="pending">0</b><span>等待</span></div><div class="stat"><b id="processing">0</b><span>处理中</span></div><div class="stat"><b id="failed">0</b><span>失败待重试</span></div></div></div>
+    <div class="card current"><h2>正在转写</h2><div class="current-title" id="transcription-title">正在读取…</div><div id="transcription-meta"></div><div class="message" id="transcription-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="transcription-media"></div></div></div>
+    <div class="card current"><h2>Codex 正在润色</h2><div class="current-title" id="enhancement-title">正在读取…</div><div id="enhancement-meta"></div><div class="message" id="enhancement-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="enhancement-media"></div></div></div>
+  </section>
+  <section class="grid" id="categories"></section><footer id="updated">每2秒自动刷新</footer>
+</main><script>
+const order=["AI课","写作课","自学课","专注课","思考课","财富课","家庭教育课","教练课","英语课"];
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function refresh(){try{const r=await fetch('/corpus/bulk-status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'状态读取失败');
+document.querySelector('#percent').textContent=d.percent.toFixed(1);document.querySelector('#fraction').textContent=`${d.complete} / ${d.total}`;document.querySelector('#overall').style.width=`${d.percent}%`;
+for(const id of ['done','pending','processing','failed'])document.querySelector('#'+id).textContent=d[id==='done'?'complete':id];
+function show(prefix,c){document.querySelector(`#${prefix}-title`).textContent=c?c.title:'队列暂时空闲';const waiting=prefix==='enhancement'&&c?` · 后面 ${c.waiting||0} 门待润色`:'';const chars=prefix==='enhancement'&&c?.raw_audio_characters!=null?` · 原始音频文字 ${Number(c.raw_audio_characters).toLocaleString('zh-CN')} 字`:'';document.querySelector(`#${prefix}-meta`).textContent=c?`${c.category} · ${c.album} · 课程 ${c.course_id}${chars}${waiting}`:'';document.querySelector(`#${prefix}-message`).textContent=c?c.message:'等待下一项';document.querySelector(`#${prefix}-media`).style.width=`${Math.round((c?.media_progress||0)*100)}%`}
+show('transcription',d.current_transcription);show('enhancement',d.current_enhancement);
+document.querySelector('#categories').innerHTML=order.filter(k=>d.categories[k]).map(k=>{const x=d.categories[k],p=x.complete/x.total*100;return `<article class="card category"><div class="row"><b>${esc(k)}</b><span>${x.complete} / ${x.total}</span></div><div class="track"><div class="fill" style="width:${p}%"></div></div></article>`}).join('');
+document.querySelector('#updated').textContent=`每2秒自动刷新 · ${new Date().toLocaleTimeString('zh-CN')}`;
+}catch(e){document.querySelector('#transcription-message').innerHTML=`<span class="error">${esc(e.message)}</span>`}}refresh();setInterval(refresh,2000);
+</script></body></html>

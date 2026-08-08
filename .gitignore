@@ -8,7 +8,10 @@ __pycache__/
 data/
 library/
 models/
-research/
+research/*
+!research/corpus/
+research/corpus/*
+!research/corpus/dashboard.html
 ai-build-log/
 runtime/
 *.log
