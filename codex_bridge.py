@@ -18,6 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 LIBRARY = ROOT / "library"
 THREADS_FILE = LIBRARY / ".codex_threads.json"
+CLASSIFICATION_REVIEW_FILE = ROOT / "research" / "corpus" / "course-classification-review.json"
 
 
 class CodexBridge:
@@ -44,6 +45,34 @@ class CodexBridge:
 
     def _save_threads(self):
         THREADS_FILE.write_text(json.dumps(self._threads, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def _allowed_categories(self):
+        categories = {path.name for path in LIBRARY.iterdir() if path.is_dir()}
+        try:
+            review = json.loads(CLASSIFICATION_REVIEW_FILE.read_text(encoding="utf-8"))
+            categories.update(str(value) for value in review.get("category_order", []) if str(value).strip())
+            categories.update(str(value) for value in review.get("custom_categories", []) if str(value).strip())
+            categories.update(str(value) for value in review.get("category_renames", {}).values() if str(value).strip())
+        except (OSError, json.JSONDecodeError):
+            pass
+        return categories
+
+    def _ensure_category_dir(self, category: str):
+        category_dir = (LIBRARY / category).resolve()
+        if category not in self._allowed_categories() or category_dir.parent != LIBRARY.resolve():
+            raise ValueError("未知课程类别")
+        if not category_dir.exists():
+            category_dir.mkdir(parents=True)
+            (category_dir / "courses").mkdir()
+            (category_dir / "CATEGORY_CONTEXT.md").write_text(
+                f"# {category}\n\n这是用户人工确认的独立课程类别。课程 Agent 应积累本类别的长期上下文，并与其他类别隔离。\n",
+                encoding="utf-8",
+            )
+            (category_dir / "AGENTS.md").write_text(
+                "# 课程 Agent\n\n优先结合当前课程文字稿回答；可以使用通用知识补充，但要区分课程原意与外部补充。\n",
+                encoding="utf-8",
+            )
+        return category_dir
 
     def start(self):
         with self._start_lock:
@@ -131,9 +160,7 @@ class CodexBridge:
             self._events["system"].append({"at": time.time(), "method": "bridge/stderr", "params": {"text": line.rstrip()}})
 
     def ensure_thread(self, category: str):
-        category_dir = (LIBRARY / category).resolve()
-        if not category_dir.is_dir() or category_dir.parent != LIBRARY.resolve():
-            raise ValueError("未知课程类别")
+        category_dir = self._ensure_category_dir(category)
         self.start()
         with self._thread_lock:
             existing = self._threads.get(category)
@@ -208,6 +235,13 @@ class CodexBridge:
             return None
         wanted = str(course_id)
         for metadata_path in courses_dir.glob("*/course.json"):
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if str(metadata.get("course_id")) == wanted:
+                return metadata_path.parent
+        for metadata_path in LIBRARY.glob("*/courses/*/course.json"):
             try:
                 metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
