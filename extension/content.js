@@ -540,9 +540,42 @@ function resetAgentView() {
   streamingBubble = null;
   codexEventCursor = Date.now() / 1000;
   chat.innerHTML = `<div class="bubble system welcome">已连接 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 工作区，并携带当前课程上下文。你可以追问课程、补充背景知识，或让 Agent 直接执行任务。</div>`;
+  restoreAgentHistory();
   const sendButton = root.querySelector(".send");
   sendButton.disabled = false;
   sendButton.textContent = "↑";
+}
+
+function agentHistoryStorageKey(courseId = currentCourseId()) {
+  return `course-studyspace-agent-history-${courseId || "unknown"}`;
+}
+
+function restoreAgentHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem(agentHistoryStorageKey()) || "[]");
+    for (const item of Array.isArray(history) ? history.slice(-100) : []) {
+      if (!item || !["user", "system"].includes(item.type) || typeof item.text !== "string") continue;
+      const bubble = document.createElement("div");
+      bubble.className = `bubble ${item.type}`;
+      bubble.textContent = item.text;
+      chat.appendChild(bubble);
+    }
+    chat.scrollTop = chat.scrollHeight;
+  } catch (_) {}
+}
+
+function saveAgentHistory() {
+  const courseId = currentCourseId();
+  if (!courseId) return;
+  const history = [...chat.querySelectorAll(".bubble:not(.welcome):not(.transient)")].map((bubble) => ({
+    type: bubble.classList.contains("user") ? "user" : "system",
+    text: bubble.textContent
+  })).filter((item) => item.text.trim()).slice(-100);
+  try {
+    localStorage.setItem(agentHistoryStorageKey(courseId), JSON.stringify(history));
+  } catch (_) {
+    localStorage.setItem(agentHistoryStorageKey(courseId), JSON.stringify(history.slice(-30)));
+  }
 }
 
 function handleCourseChange() {
@@ -834,6 +867,7 @@ function addBubble(type, text) {
   bubble.textContent = text;
   chat.appendChild(bubble);
   chat.scrollTop = chat.scrollHeight;
+  saveAgentHistory();
 }
 
 let codexEventCursor = 0;
@@ -861,6 +895,7 @@ function handleCodexEvent(event) {
     streamingBubble.textContent += params.delta || "";
     chat.scrollTop = chat.scrollHeight;
   } else if (method === "turn/completed") {
+    saveAgentHistory();
     streamingBubble = null;
     agentSending = false;
     const sendButton = root.querySelector(".send");
@@ -885,7 +920,7 @@ function handleCodexEvent(event) {
 
 function addApprovalCard(requestId, method, params) {
   const card = document.createElement("div");
-  card.className = "bubble system";
+  card.className = "bubble system transient";
   const summary = params.command || params.reason || params.grantRoot || method;
   card.textContent = `Codex 请求授权：\n${typeof summary === "string" ? summary : JSON.stringify(summary)}`;
   const actions = document.createElement("div");
@@ -912,6 +947,7 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "TOGGLE_PANEL") setWorkspaceOpen(panel.classList.contains("closed"));
 });
 
+resetAgentView();
 identifyCourseCategory().finally(loadTranscript);
 refreshCourseStatus();
 loadAgentModels();
