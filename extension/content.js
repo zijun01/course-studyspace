@@ -117,6 +117,7 @@ let playingLocalEnd = null;
 let playingGlobalEnd = null;
 let observedCourseId = "";
 let currentCourseMetadata = {};
+const ledgerClassifiedCourseIds = new Set();
 const watchedJobs = new Set();
 const courseCategories = ["AI课", "写作课", "自学课", "专注课", "思考课", "财富课", "家庭教育课", "教练课", "英语课"];
 const albumCategoryMap = {"3": "写作课"};
@@ -171,6 +172,14 @@ function restoreCategory() {
   categorySelect.value = albumCategory || localStorage.getItem(categoryStorageKey()) || "";
   if (albumCategory) localStorage.setItem(categoryStorageKey(), albumCategory);
   root.querySelector("[data-category-label]").textContent = categorySelect.value || "未选择类别";
+}
+
+function ensureCategoryOption(category) {
+  if (!category || [...categorySelect.options].some((option) => option.value === category)) return;
+  const option = document.createElement("option");
+  option.value = category;
+  option.textContent = category;
+  categorySelect.appendChild(option);
 }
 
 function detectCategory(course) {
@@ -309,12 +318,13 @@ async function loadTranscript() {
     if (!response.ok) return;
     const data = await response.json();
     if (currentCourseId() !== requestedCourseId) return;
-    if (data.course?.category && courseCategories.includes(data.course.category)) {
+    if (!ledgerClassifiedCourseIds.has(requestedCourseId) && data.course?.category && courseCategories.includes(data.course.category)) {
       categorySelect.value = data.course.category;
       localStorage.setItem(categoryStorageKey(), data.course.category);
       root.querySelector("[data-category-label]").textContent = data.course.category;
     }
-    currentCourseMetadata = data.course || {};
+    const ledgerMetadata = ledgerClassifiedCourseIds.has(requestedCourseId) ? currentCourseMetadata : {};
+    currentCourseMetadata = {...(data.course || {}), ...ledgerMetadata};
     segments = data.records.flatMap((record) => (record.segments || []).map((segment) => ({
       ...segment,
       content_id: record.content_id,
@@ -560,14 +570,31 @@ function handleCourseChange() {
     return;
   }
   statusText.textContent = "正在读取当前课程…";
-  identifyCourseCategory();
-  loadTranscript();
+  identifyCourseCategory().finally(loadTranscript);
   refreshCourseStatus();
 }
 
 async function identifyCourseCategory() {
   const courseId = currentCourseId();
   if (!courseId) return;
+  try {
+    const response = await fetch(`http://127.0.0.1:4317/course-classification?course_id=${encodeURIComponent(courseId)}`);
+    const result = await response.json();
+    if (currentCourseId() !== courseId) return;
+    for (const category of result.categories || []) ensureCategoryOption(category);
+    if (response.ok && result.found && result.category) {
+      ensureCategoryOption(result.category);
+      categorySelect.value = result.category;
+      ledgerClassifiedCourseIds.add(courseId);
+      localStorage.setItem(categoryStorageKey(), result.category);
+      root.querySelector("[data-category-label]").textContent = result.category;
+      currentCourseMetadata = {...currentCourseMetadata, title: result.title, album_title: result.album_title};
+      statusText.textContent = `已按人工总账归类为 ${result.category}`;
+      return;
+    }
+  } catch (_) {
+    // Fall through to legacy inference only when the local classification ledger is unavailable.
+  }
   const albumCategory = albumCategoryMap[currentAlbumId()] || "";
   if (albumCategory) {
     categorySelect.value = albumCategory;
@@ -885,7 +912,6 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "TOGGLE_PANEL") setWorkspaceOpen(panel.classList.contains("closed"));
 });
 
-loadTranscript();
+identifyCourseCategory().finally(loadTranscript);
 refreshCourseStatus();
-identifyCourseCategory();
 loadAgentModels();

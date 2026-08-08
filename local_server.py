@@ -1046,6 +1046,27 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, json.JSONDecodeError) as exc:
                 self._json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/course-classification":
+            query = parse_qs(parsed.query)
+            try:
+                course_number = int(query.get("course_id", [""])[0])
+                board = classification_board_payload()
+                for column in board["columns"]:
+                    course = next((item for item in column["courses"] if int(item.get("course_id")) == course_number), None)
+                    if course:
+                        self._json({
+                            "found": True,
+                            "course_id": course_number,
+                            "category": column["category"],
+                            "title": course.get("display_title") or course.get("title"),
+                            "album_title": course.get("album_title", ""),
+                            "categories": [item["category"] for item in board["columns"]],
+                        })
+                        return
+                self._json({"found": False, "course_id": course_number, "categories": [item["category"] for item in board["columns"]]})
+            except (ValueError, OSError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if parsed.path == "/corpus/dashboard":
             try:
                 body = (CORPUS_DIR / "dashboard.html").read_bytes()
