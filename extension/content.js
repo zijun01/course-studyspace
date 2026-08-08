@@ -120,6 +120,7 @@ let playbackEndHandler = null;
 let playingLocalEnd = null;
 let playingGlobalEnd = null;
 let observedCourseId = "";
+let currentCourseMetadata = {};
 const watchedJobs = new Set();
 const courseCategories = ["AI课", "写作课", "自学课", "专注课", "思考课", "财富课", "家庭教育课", "教练课", "英语课"];
 const albumCategoryMap = {"3": "写作课"};
@@ -495,6 +496,7 @@ async function loadTranscript() {
       localStorage.setItem(categoryStorageKey(), data.course.category);
       root.querySelector("[data-category-label]").textContent = data.course.category;
     }
+    currentCourseMetadata = data.course || {};
     segments = data.records.flatMap((record) => (record.segments || []).map((segment) => ({
       ...segment,
       content_id: record.content_id,
@@ -723,6 +725,7 @@ function handleCourseChange() {
   segments = [];
   needsEnhancement = false;
   courseAudioIndex = null;
+  currentCourseMetadata = {};
   stopSegmentPlayback("已切换课程");
   studyAudio?.pause();
   studyAudio = null;
@@ -952,7 +955,7 @@ async function sendAgentMessage() {
     const response = await fetch("http://127.0.0.1:4317/codex/message", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({category: categorySelect.value, course_id: Number(currentCourseId()) || null, text: question || "请处理我划选的内容", selection: selectedText, model: agentModelSelect.value || null, effort: agentEffortSelect.value || null})
+      body: JSON.stringify({category: categorySelect.value, course_id: Number(currentCourseId()) || null, course_title: currentCourseMetadata.title || "", album_title: currentCourseMetadata.site_album_title || currentCourseMetadata.album_title || "", text: question || "请处理我划选的内容", selection: selectedText, model: agentModelSelect.value || null, effort: agentEffortSelect.value || null})
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Codex 无法开始任务");

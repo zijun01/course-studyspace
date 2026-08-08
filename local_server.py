@@ -41,6 +41,8 @@ MEDIA_CACHE_DIR = ROOT / "data" / "media-cache"
 CORPUS_DIR = ROOT / "research" / "corpus"
 COURSE_QUEUE_DIR = CORPUS_DIR / "course-processing-queue"
 COURSE_TARGETS_PATH = CORPUS_DIR / "course-processing-targets.json"
+CLASSIFICATION_REVIEW_PATH = CORPUS_DIR / "course-classification-review.json"
+_classification_review_lock = threading.Lock()
 MODEL_NAME = "whisper-large-v3-turbo"
 MLX_MODEL_PATH = ROOT / "models" / MODEL_NAME
 OPENAI_WHISPER_PYTHON = Path(
@@ -115,6 +117,84 @@ def transcribe_audio(path: Path, progress=None) -> tuple[dict, str]:
 
 def course_id(url: str) -> str:
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
+
+
+def load_classification_reviews() -> dict:
+    try:
+        payload = json.loads(CLASSIFICATION_REVIEW_PATH.read_text(encoding="utf-8"))
+        return payload if isinstance(payload.get("reviews"), dict) else {"schema_version": "1.0", "reviews": {}}
+    except (OSError, json.JSONDecodeError):
+        return {"schema_version": "1.0", "reviews": {}}
+
+
+def classification_review_payload() -> dict:
+    targets_payload = json.loads(COURSE_TARGETS_PATH.read_text(encoding="utf-8"))
+    targets = targets_payload.get("targets", [])
+    review_payload = load_classification_reviews()
+    reviews = review_payload.get("reviews", {})
+    reviewed = sum(1 for target in targets if str(target.get("course_id")) in reviews)
+    categories = list(CATEGORIES)
+    for review in reviews.values():
+        category = str(review.get("decided_category") or "").strip()
+        if category and category not in categories:
+            categories.append(category)
+    album_positions = {}
+    courses = []
+    for global_index, target in enumerate(targets, 1):
+        album_key = str(target.get("album_id"))
+        album_positions[album_key] = album_positions.get(album_key, 0) + 1
+        courses.append({
+            **target,
+            "current_global_order": global_index,
+            "current_album_order": album_positions[album_key],
+        })
+    return {
+        "courses": courses,
+        "reviews": reviews,
+        "categories": categories,
+        "total": len(targets),
+        "reviewed": reviewed,
+        "remaining": len(targets) - reviewed,
+        "updated_at": review_payload.get("updated_at"),
+    }
+
+
+def save_classification_review(course_number: int, decided_category: str, note: str, decided_order: int | None = None, decided_title: str = "") -> dict:
+    if not decided_category or len(decided_category) > 40:
+        raise ValueError("课程类别不能为空，且不能超过 40 个字")
+    if len(note) > 2000:
+        raise ValueError("判断说明不能超过 2000 个字")
+    if decided_order is not None and not 1 <= decided_order <= 9999:
+        raise ValueError("课程顺序必须是 1 到 9999 之间的数字")
+    if not decided_title or len(decided_title) > 200:
+        raise ValueError("课程名称不能为空，且不能超过 200 个字")
+    targets_payload = json.loads(COURSE_TARGETS_PATH.read_text(encoding="utf-8"))
+    target = next((item for item in targets_payload.get("targets", []) if int(item.get("course_id")) == course_number), None)
+    if not target:
+        raise ValueError("课程不在当前分类总账中")
+    with _classification_review_lock:
+        payload = load_classification_reviews()
+        now = datetime.now(timezone.utc).isoformat()
+        review = {
+            "course_id": course_number,
+            "title": target.get("title", ""),
+            "album_id": target.get("album_id"),
+            "album_title": target.get("album_title", ""),
+            "original_category": target.get("course_category", ""),
+            "decided_category": decided_category,
+            "decided_order": decided_order,
+            "decided_title": decided_title,
+            "note": note,
+            "reviewed_at": now,
+        }
+        payload.setdefault("reviews", {})[str(course_number)] = review
+        payload["schema_version"] = "1.0"
+        payload["updated_at"] = now
+        CLASSIFICATION_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = CLASSIFICATION_REVIEW_PATH.with_suffix(".json.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        temp_path.replace(CLASSIFICATION_REVIEW_PATH)
+    return review
 
 
 def safe_title(title: str) -> str:
@@ -728,6 +808,12 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, json.JSONDecodeError) as exc:
                 self._json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
             return
+        if parsed.path == "/corpus/classification-review":
+            try:
+                self._json(classification_review_payload())
+            except (OSError, json.JSONDecodeError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
         if parsed.path == "/corpus/dashboard":
             try:
                 body = (CORPUS_DIR / "dashboard.html").read_bytes()
@@ -832,6 +918,21 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
+        if urlparse(self.path).path == "/corpus/classification-review":
+            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                payload = json.loads(self.rfile.read(length))
+                review = save_classification_review(
+                    int(payload.get("course_id")),
+                    str(payload.get("decided_category") or "").strip(),
+                    str(payload.get("note") or "").strip(),
+                    int(payload["decided_order"]) if str(payload.get("decided_order") or "").strip() else None,
+                    str(payload.get("decided_title") or "").strip(),
+                )
+                self._json({"ok": True, "review": review})
+            except (json.JSONDecodeError, TypeError, ValueError, OSError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if urlparse(self.path).path == "/corpus/course-enqueue":
             length = int(self.headers.get("Content-Length", "0"))
             if length <= 0 or length > 2 * 1024 * 1024:
@@ -922,6 +1023,8 @@ class Handler(BaseHTTPRequestHandler):
                     category=category,
                     text=text,
                     course_id=payload.get("course_id"),
+                    course_title=str(payload.get("course_title") or "").strip(),
+                    album_title=str(payload.get("album_title") or "").strip(),
                     selection=str(payload.get("selection", "")),
                     model=model,
                     effort=effort,

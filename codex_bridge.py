@@ -216,7 +216,7 @@ class CodexBridge:
                 return metadata_path.parent
         return None
 
-    def send_message(self, category: str, text: str, course_id: int | None = None, selection: str = "", model: str | None = None, effort: str | None = None):
+    def send_message(self, category: str, text: str, course_id: int | None = None, course_title: str = "", album_title: str = "", selection: str = "", model: str | None = None, effort: str | None = None):
         result = self.ensure_thread(category)
         thread_id = result["thread"]["id"]
         course_dir = self._course_dir(category, course_id)
@@ -225,8 +225,12 @@ class CodexBridge:
             "当问题涉及课程时，先结合课程文字稿理解老师原意；你也可以使用通用知识解释概念、补充背景、比较观点，或按用户要求执行其他任务。\n"
             "如果补充内容并非老师在本课明确讲过，请清楚区分‘课程内容’与‘补充说明’，不要把外部知识冒充老师原话。\n"
         )
+        if course_title:
+            context += f"当前课程名称：{course_title}\n"
+        if album_title:
+            context += f"所属专辑：{album_title}\n"
         if course_id:
-            context += f"当前课程 ID：{course_id}\n"
+            context += f"后台定位编号：{course_id}（仅用于查找资料，不要把编号当作课程名称向用户表述）\n"
         if course_dir:
             context += f"当前课程资料目录：{course_dir}\n"
         if selection:

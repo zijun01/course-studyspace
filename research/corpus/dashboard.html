@@ -3,38 +3,95 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>李笑来课程预处理进度</title>
+  <title>李笑来课程预处理与审校</title>
   <style>
     :root{color-scheme:light;--ink:#23231f;--muted:#78756c;--paper:#f5f2eb;--card:#fffdf8;--line:#ddd7ca;--green:#376b5d;--gold:#a8783f;--red:#a84b44}
     *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}
-    main{width:min(1080px,calc(100% - 32px));margin:40px auto 80px}.eyebrow{color:var(--green);font-weight:700;letter-spacing:.12em;font-size:12px}
-    h1{font-size:30px;margin:5px 0 8px}.sub{color:var(--muted);margin:0 0 26px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 8px 30px rgba(45,40,30,.05)}
+    main{width:min(1120px,calc(100% - 32px));margin:40px auto 80px}.eyebrow{color:var(--green);font-weight:700;letter-spacing:.12em;font-size:12px}
+    h1{font-size:30px;margin:5px 0 8px}.sub{color:var(--muted);margin:0 0 20px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 8px 30px rgba(45,40,30,.05)}
+    .tabs{display:flex;gap:8px;margin:0 0 20px}.tab{border:1px solid var(--line);border-radius:10px;padding:9px 14px;background:var(--card);color:var(--ink);font-weight:650;cursor:pointer}.tab.active{border-color:var(--ink);background:var(--ink);color:white}.hidden{display:none!important}
     .hero{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:18px}.number{font-size:54px;font-weight:750;line-height:1}.number small{font-size:18px;color:var(--muted);font-weight:500}
     .track{height:16px;background:#e5e0d5;border-radius:999px;overflow:hidden;margin:18px 0 10px}.fill{height:100%;width:0;background:linear-gradient(90deg,var(--green),#6f9b82);transition:width .6s}
     .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.stat{padding:13px;border-radius:12px;background:#f3efe6}.stat b{display:block;font-size:24px}.stat span{color:var(--muted);font-size:12px}
     h2{font-size:16px;margin:0 0 14px}.current{border-left:5px solid var(--gold)}.current-title{font-size:21px;font-weight:700}.message{color:var(--muted);margin-top:8px}.mini-track{height:8px;background:#e8e3d9;border-radius:9px;overflow:hidden;margin-top:15px}.mini-fill{height:100%;background:var(--gold);width:0;transition:width .5s}
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}.category .row{display:flex;justify-content:space-between;gap:12px}.category .track{height:8px;margin:10px 0 0}.error{color:var(--red)}footer{margin-top:18px;color:var(--muted);font-size:12px;text-align:right}
-    @media(max-width:760px){.hero,.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}}
+    .review-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.review-progress{color:var(--muted)}.review-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);gap:16px}.review-card{padding:28px}.course-kicker{color:var(--green);font-size:12px;font-weight:700;letter-spacing:.08em}.course-title{font-size:28px;line-height:1.3;margin:7px 0 8px}.course-meta{color:var(--muted);margin-bottom:22px}.course-link{color:var(--green)}
+    .review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{display:flex;flex-direction:column;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:12px;color:var(--muted);font-weight:650}.field input,.field select,.field textarea,.search{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:white;color:var(--ink);font:inherit}.field textarea{min-height:100px;resize:vertical}.custom-category[hidden]{display:none}
+    .review-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:18px}.button-row{display:flex;align-items:center;gap:8px}.action{border:0;border-radius:10px;padding:10px 15px;background:var(--ink);color:white;font-weight:650;cursor:pointer}.action.secondary{background:#eae5da;color:var(--ink)}.action:disabled{opacity:.5;cursor:default}.save-status{color:var(--green);font-size:12px}.side-card{height:max-content}.scope-note{font-size:13px;color:var(--muted);margin:0 0 14px}.filter-row{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px}.filter{border:1px solid var(--line);border-radius:9px;padding:8px;background:white}.review-list{max-height:470px;overflow:auto;border-top:1px solid var(--line)}.review-item{display:block;width:100%;padding:10px 5px;border:0;border-bottom:1px solid #ece7dc;background:transparent;text-align:left;cursor:pointer}.review-item:hover,.review-item.active{color:var(--green);background:#f6f2e9}.review-item small{display:block;color:var(--muted)}
+    @media(max-width:760px){.hero,.grid,.review-layout,.review-grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.field.full{grid-column:auto}.course-title{font-size:22px}.review-actions{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body><main>
   <div class="eyebrow">COURSE STUDYSPACE · 本机实时状态</div>
   <h1>李笑来课程预处理</h1><p class="sub">网页原文保存 → 最高质量本机转录 → Codex 整课语义润色</p>
-  <section class="hero">
-    <div class="card"><div class="number"><span id="percent">0</span>% <small id="fraction">0 / 321</small></div><div class="track"><div class="fill" id="overall"></div></div><div class="stats"><div class="stat"><b id="done">0</b><span>已完成</span></div><div class="stat"><b id="pending">0</b><span>等待</span></div><div class="stat"><b id="processing">0</b><span>处理中</span></div><div class="stat"><b id="failed">0</b><span>失败待重试</span></div></div></div>
-    <div class="card current"><h2>正在转写</h2><div class="current-title" id="transcription-title">正在读取…</div><div id="transcription-meta"></div><div class="message" id="transcription-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="transcription-media"></div></div></div>
-    <div class="card current"><h2>Codex 正在润色</h2><div class="current-title" id="enhancement-title">正在读取…</div><div id="enhancement-meta"></div><div class="message" id="enhancement-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="enhancement-media"></div></div></div>
-  </section>
-  <section class="grid" id="categories"></section><footer id="updated">每2秒自动刷新</footer>
+  <nav class="tabs"><button class="tab active" data-view="progress">处理进度</button><button class="tab" data-view="review">分类、名称与顺序审校</button></nav>
+  <div id="progress-view">
+    <section class="hero">
+      <div class="card"><div class="number"><span id="percent">0</span>% <small id="fraction">0 / 323</small></div><div class="track"><div class="fill" id="overall"></div></div><div class="stats"><div class="stat"><b id="done">0</b><span>已完成</span></div><div class="stat"><b id="pending">0</b><span>等待</span></div><div class="stat"><b id="processing">0</b><span>处理中</span></div><div class="stat"><b id="failed">0</b><span>失败待重试</span></div></div></div>
+      <div class="card current"><h2>正在转写</h2><div class="current-title" id="transcription-title">正在读取…</div><div id="transcription-meta"></div><div class="message" id="transcription-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="transcription-media"></div></div></div>
+      <div class="card current"><h2>Codex 正在润色</h2><div class="current-title" id="enhancement-title">正在读取…</div><div id="enhancement-meta"></div><div class="message" id="enhancement-message">连接本机服务</div><div class="mini-track"><div class="mini-fill" id="enhancement-media"></div></div></div>
+    </section>
+    <section class="grid" id="categories"></section><footer id="updated">每2秒自动刷新</footer>
+  </div>
+  <div id="review-view" class="hidden">
+    <div class="review-head"><div><h2>逐门人工审校</h2><div class="review-progress" id="review-progress">正在读取课程总账…</div></div><button class="action secondary" id="next-unreviewed">跳到下一门未审课程</button></div>
+    <section class="review-layout">
+      <article class="card review-card">
+        <div class="course-kicker" id="review-kicker">课程</div><div class="course-title" id="review-title">正在读取…</div><div class="course-meta" id="review-meta"></div>
+        <div class="review-grid">
+          <div class="field full"><label for="decided-title">你确认的课程名称</label><input id="decided-title" maxlength="200"></div>
+          <div class="field"><label for="decided-category">你确认的类别</label><select id="decided-category"></select></div>
+          <div class="field custom-category" id="custom-category-wrap" hidden><label for="custom-category">新类别名称</label><input id="custom-category" maxlength="40" placeholder="例如：人生课"></div>
+          <div class="field"><label for="decided-order">你确认的专辑内顺序</label><input id="decided-order" type="number" min="1" max="9999"></div>
+          <div class="field full"><label for="review-note">你的判断或说明</label><textarea id="review-note" maxlength="2000" placeholder="例如：这节其实属于沟通课；应当放在“……”之后；日期只是发布时间，不应算课程名……"></textarea></div>
+        </div>
+        <div class="review-actions"><div class="button-row"><button class="action secondary" id="previous-course">上一门</button><button class="action secondary" id="next-course">下一门</button></div><div class="button-row"><span class="save-status" id="save-status"></span><button class="action" id="save-review">保存并到下一门</button></div></div>
+      </article>
+      <aside class="card side-card"><h2>课程总账</h2><p class="scope-note">只记录你的裁决，暂不移动正在处理的文件。审完后再统一重命名、重分类和重排。</p><div class="filter-row"><select class="filter" id="review-filter"><option value="unreviewed">只看未审</option><option value="all">全部课程</option><option value="reviewed">只看已审</option></select><input class="search" id="review-search" placeholder="搜索课程名、专辑或编号"></div><div class="review-list" id="review-list"></div></aside>
+    </section>
+  </div>
 </main><script>
 const order=["AI课","写作课","自学课","专注课","思考课","财富课","家庭教育课","教练课","英语课"];
+const byId=id=>document.getElementById(id);
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-async function refresh(){try{const r=await fetch('/corpus/bulk-status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'状态读取失败');
-document.querySelector('#percent').textContent=d.percent.toFixed(1);document.querySelector('#fraction').textContent=`${d.complete} / ${d.total}`;document.querySelector('#overall').style.width=`${d.percent}%`;
-for(const id of ['done','pending','processing','failed'])document.querySelector('#'+id).textContent=d[id==='done'?'complete':id];
-function show(prefix,c){document.querySelector(`#${prefix}-title`).textContent=c?c.title:'队列暂时空闲';const waiting=prefix==='enhancement'&&c?` · 后面 ${c.waiting||0} 门待润色`:'';const chars=prefix==='enhancement'&&c?.raw_audio_characters!=null?` · 原始音频文字 ${Number(c.raw_audio_characters).toLocaleString('zh-CN')} 字`:'';document.querySelector(`#${prefix}-meta`).textContent=c?`${c.category} · ${c.album} · 课程 ${c.course_id}${chars}${waiting}`:'';document.querySelector(`#${prefix}-message`).textContent=c?c.message:'等待下一项';document.querySelector(`#${prefix}-media`).style.width=`${Math.round((c?.media_progress||0)*100)}%`}
-show('transcription',d.current_transcription);show('enhancement',d.current_enhancement);
-document.querySelector('#categories').innerHTML=order.filter(k=>d.categories[k]).map(k=>{const x=d.categories[k],p=x.complete/x.total*100;return `<article class="card category"><div class="row"><b>${esc(k)}</b><span>${x.complete} / ${x.total}</span></div><div class="track"><div class="fill" style="width:${p}%"></div></div></article>`}).join('');
-document.querySelector('#updated').textContent=`每2秒自动刷新 · ${new Date().toLocaleTimeString('zh-CN')}`;
-}catch(e){document.querySelector('#transcription-message').innerHTML=`<span class="error">${esc(e.message)}</span>`}}refresh();setInterval(refresh,2000);
+async function refresh(){
+  try{
+    const r=await fetch('/corpus/bulk-status',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'状态读取失败');
+    byId('percent').textContent=d.percent.toFixed(1);byId('fraction').textContent=`${d.complete} / ${d.total}`;byId('overall').style.width=`${d.percent}%`;
+    for(const id of ['done','pending','processing','failed'])byId(id).textContent=d[id==='done'?'complete':id];
+    function show(prefix,c){byId(`${prefix}-title`).textContent=c?c.title:'队列暂时空闲';const waiting=prefix==='enhancement'&&c?` · 后面 ${c.waiting||0} 门待润色`:'';const chars=prefix==='enhancement'&&c?.raw_audio_characters!=null?` · 原始音频文字 ${Number(c.raw_audio_characters).toLocaleString('zh-CN')} 字`:'';byId(`${prefix}-meta`).textContent=c?`${c.category} · ${c.album} · 后台编号 ${c.course_id}${chars}${waiting}`:'';byId(`${prefix}-message`).textContent=c?c.message:'等待下一项';byId(`${prefix}-media`).style.width=`${Math.round((c?.media_progress||0)*100)}%`}
+    show('transcription',d.current_transcription);show('enhancement',d.current_enhancement);
+    byId('categories').innerHTML=order.filter(k=>d.categories[k]).map(k=>{const x=d.categories[k],p=x.complete/x.total*100;return `<article class="card category"><div class="row"><b>${esc(k)}</b><span>${x.complete} / ${x.total}</span></div><div class="track"><div class="fill" style="width:${p}%"></div></div></article>`}).join('');
+    byId('updated').textContent=`每2秒自动刷新 · ${new Date().toLocaleTimeString('zh-CN')}`;
+  }catch(e){byId('transcription-message').innerHTML=`<span class="error">${esc(e.message)}</span>`}
+}
+let reviewData={courses:[],reviews:{},categories:[]},reviewIndex=0;
+function selectedCourse(){return reviewData.courses[reviewIndex]||null}
+function reviewFor(course){return reviewData.reviews[String(course?.course_id)]||null}
+function effectiveCategory(){return byId('decided-category').value==='__custom__'?byId('custom-category').value.trim():byId('decided-category').value}
+function renderReviewList(){
+  const mode=byId('review-filter').value,q=byId('review-search').value.trim().toLowerCase();
+  const rows=reviewData.courses.map((course,index)=>({course,index,review:reviewFor(course)})).filter(x=>(mode==='all'||(mode==='reviewed'&&x.review)||(mode==='unreviewed'&&!x.review))&&(!q||`${x.course.title} ${x.course.album_title} ${x.course.course_id}`.toLowerCase().includes(q))).slice(0,180);
+  byId('review-list').innerHTML=rows.map(x=>`<button class="review-item ${x.index===reviewIndex?'active':''}" data-index="${x.index}">${x.review?'✓ ':'○ '}${esc(x.course.title)}<small>${esc(x.course.album_title)} · 当前：${esc(x.course.course_category)} · 第 ${x.course.current_album_order} 节</small></button>`).join('')||'<p class="scope-note">没有符合条件的课程</p>';
+  byId('review-list').querySelectorAll('[data-index]').forEach(button=>button.onclick=()=>{reviewIndex=Number(button.dataset.index);renderReview()});
+}
+function renderReview(){
+  const course=selectedCourse();if(!course)return;const review=reviewFor(course);
+  byId('review-progress').textContent=`已审 ${reviewData.reviewed} / ${reviewData.total} · 还剩 ${reviewData.remaining} 门`;
+  byId('review-kicker').textContent=`课程 ${reviewIndex+1} / ${reviewData.total} · 后台编号 ${course.course_id}`;byId('review-title').textContent=course.title;
+  byId('review-meta').innerHTML=`${esc(course.album_title)} · 当前类别：<b>${esc(course.course_category)}</b> · 当前专辑内第 <b>${course.current_album_order}</b> 节 · <a class="course-link" href="${esc(course.source_url)}" target="_blank">打开原课程</a>`;
+  byId('decided-title').value=review?.decided_title||course.title;
+  const categories=[...new Set([...reviewData.categories,course.course_category,review?.decided_category].filter(Boolean))];byId('decided-category').innerHTML=categories.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')+'<option value="__custom__">＋ 新建其他类别…</option>';
+  const known=categories.includes(review?.decided_category||course.course_category);byId('decided-category').value=known?(review?.decided_category||course.course_category):'__custom__';byId('custom-category').value=known?'':(review?.decided_category||'');byId('custom-category-wrap').hidden=byId('decided-category').value!=='__custom__';
+  byId('decided-order').value=review?.decided_order||course.current_album_order;byId('review-note').value=review?.note||'';byId('save-status').textContent=review?'已保存过，可继续修改':'';byId('previous-course').disabled=reviewIndex===0;byId('next-course').disabled=reviewIndex>=reviewData.courses.length-1;renderReviewList();
+}
+async function loadReviews(){const r=await fetch('/corpus/classification-review',{cache:'no-store'}),d=await r.json();if(!r.ok)throw Error(d.error||'审校总账读取失败');reviewData=d;const first=d.courses.findIndex(course=>!d.reviews[String(course.course_id)]);reviewIndex=first>=0?first:0;renderReview()}
+async function saveReview(){
+  const course=selectedCourse(),category=effectiveCategory(),title=byId('decided-title').value.trim();if(!category){byId('save-status').textContent='请填写类别';return}if(!title){byId('save-status').textContent='请填写课程名称';return}
+  byId('save-review').disabled=true;byId('save-status').textContent='正在保存…';
+  try{const r=await fetch('/corpus/classification-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({course_id:course.course_id,decided_category:category,decided_title:title,decided_order:byId('decided-order').value,note:byId('review-note').value})}),d=await r.json();if(!r.ok)throw Error(d.error||'保存失败');reviewData.reviews[String(course.course_id)]=d.review;reviewData.reviewed=Object.keys(reviewData.reviews).length;reviewData.remaining=reviewData.total-reviewData.reviewed;const next=reviewData.courses.findIndex((item,index)=>index>reviewIndex&&!reviewData.reviews[String(item.course_id)]);reviewIndex=next>=0?next:Math.min(reviewIndex+1,reviewData.courses.length-1);renderReview()}catch(e){byId('save-status').textContent=e.message}finally{byId('save-review').disabled=false}
+}
+document.querySelectorAll('.tab').forEach(tab=>tab.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===tab));byId('progress-view').classList.toggle('hidden',tab.dataset.view!=='progress');byId('review-view').classList.toggle('hidden',tab.dataset.view!=='review');if(tab.dataset.view==='review'&&!reviewData.courses.length)loadReviews().catch(e=>byId('review-progress').textContent=e.message)});
+byId('decided-category').onchange=()=>{byId('custom-category-wrap').hidden=byId('decided-category').value!=='__custom__'};byId('review-filter').onchange=renderReviewList;byId('review-search').oninput=renderReviewList;byId('save-review').onclick=saveReview;byId('previous-course').onclick=()=>{if(reviewIndex>0){reviewIndex--;renderReview()}};byId('next-course').onclick=()=>{if(reviewIndex<reviewData.courses.length-1){reviewIndex++;renderReview()}};byId('next-unreviewed').onclick=()=>{const next=reviewData.courses.findIndex((course,index)=>index>reviewIndex&&!reviewData.reviews[String(course.course_id)]);const any=reviewData.courses.findIndex(course=>!reviewData.reviews[String(course.course_id)]);if(next>=0||any>=0){reviewIndex=next>=0?next:any;renderReview()}};
+refresh();setInterval(refresh,2000);
 </script></body></html>
