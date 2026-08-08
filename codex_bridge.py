@@ -274,6 +274,8 @@ class CodexBridge:
             "threadId": thread_id,
             "input": [{"type": "text", "text": prompt}],
         }
+        if course_dir:
+            params["cwd"] = str(course_dir)
         if model:
             params["model"] = model
         if effort:

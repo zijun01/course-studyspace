@@ -32,13 +32,14 @@ root.innerHTML = `
     .view { min-width:0; min-height:0; display:flex; flex-direction:column; }
     .view + .view { border-left:1px solid #dedbd2; }
     .column-title { margin:0; padding:12px 18px 10px; border-bottom:1px solid #e9e5dc; font-size:13px; letter-spacing:.04em; color:#6f6a61; }
-    .agent-titlebar { min-height:54px; padding:8px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid #e9e5dc; background:#fbfaf7; }
+    .agent-titlebar { min-height:64px; padding:8px 14px; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:5px 10px; border-bottom:1px solid #30363d; background:#161b22; color:#c9d1d9; }
     .agent-brand { display:flex; min-width:0; align-items:center; gap:8px; }
     .agent-context-dot { width:9px; height:9px; flex:0 0 auto; border-radius:50%; background:#10a37f; box-shadow:0 0 0 3px rgba(16,163,127,.1); }
     .agent-controls { display:flex; min-width:0; align-items:center; gap:6px; }
-    .agent-select { min-width:0; max-width:168px; border:0; border-radius:9px; padding:7px 8px; background:transparent; color:#202123; font:600 14px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
-    .agent-select:hover { background:#f3f3f3; }
-    .agent-effort { max-width:82px; background:#f4f4f4; color:#676767; font-size:11px; font-weight:500; }
+    .agent-select { min-width:0; max-width:168px; border:0; border-radius:7px; padding:6px 8px; background:#21262d; color:#c9d1d9; font:600 12px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; cursor:pointer; }
+    .agent-select:hover { background:#30363d; }
+    .agent-effort { max-width:82px; color:#8b949e; font-size:11px; font-weight:500; }
+    .terminal-path { flex:0 0 100%; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#7ee787; font:11px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace; }
     .transcript-count { margin-left:8px; color:#8b857b; font-size:11px; font-weight:500; letter-spacing:0; }
     .transcript { overflow:auto; padding:15px 18px 100px; }
     .empty { margin:46px 18px; padding:22px; text-align:center; color:#858075; border:1px dashed #d5d0c5; border-radius:14px; }
@@ -53,22 +54,26 @@ root.innerHTML = `
     .segment.source-note time { color:#6f675d; font-weight:650; }
     .segment.source-note { cursor:default; }
     .segment.source-note:hover { background:#f4f0e7; }
-    [data-panel="agent"] { position:relative; background:#fbfaf7; }
-    .chat { overflow:auto; flex:1; padding:24px 18px 122px; }
-    .bubble { max-width:92%; padding:5px 2px; margin:0 0 20px; white-space:pre-wrap; color:#292929; line-height:1.65; overflow-wrap:anywhere; }
+    [data-panel="agent"] { position:relative; background:#0d1117; }
+    .chat { overflow:auto; flex:1; padding:18px 16px 126px; background:#0d1117; }
+    .bubble { max-width:100%; padding:0; margin:0 0 16px; white-space:pre-wrap; color:#c9d1d9; font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
     .bubble.system { margin-right:auto; }
-    .bubble.user { width:max-content; max-width:86%; margin-left:auto; padding:10px 14px; border-radius:18px; background:#eeeae1; color:#292929; }
-    .bubble.welcome { max-width:100%; padding:12px 14px; border:1px solid #e1ddd4; border-radius:14px; color:#666; font-size:12px; background:#f4f0e7; }
-    .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 14px 12px; background:linear-gradient(to bottom,rgba(251,250,247,0),#fbfaf7 20%); }
-    .composer-shell { border:1px solid #d5d0c5; border-radius:24px; padding:9px 10px 8px 14px; background:#fbfaf7; box-shadow:0 2px 12px rgba(42,38,30,.08); }
-    .composer-shell:focus-within { border-color:#c7c7c7; box-shadow:0 3px 16px rgba(0,0,0,.11); }
-    textarea { width:100%; min-height:44px; max-height:150px; resize:none; border:0; padding:4px 2px 7px; background:transparent; color:#292929; font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; outline:none; }
+    .bubble.system:not(.welcome)::before { content:"codex\A"; white-space:pre; color:#7ee787; }
+    .bubble.user { width:100%; margin-left:0; color:#f0f6fc; }
+    .bubble.user::before { content:"codex › "; color:#58a6ff; font-weight:700; }
+    .bubble.welcome { max-width:100%; padding:10px 11px; border:1px solid #30363d; border-radius:6px; color:#8b949e; background:#161b22; }
+    .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 12px 11px; background:linear-gradient(to bottom,rgba(13,17,23,0),#0d1117 18%); }
+    .composer-shell { border:1px solid #30363d; border-radius:7px; padding:8px 9px; background:#161b22; box-shadow:0 3px 14px rgba(0,0,0,.28); }
+    .composer-shell:focus-within { border-color:#58a6ff; box-shadow:0 0 0 1px rgba(88,166,255,.2); }
+    .terminal-input-row { display:flex; align-items:flex-start; gap:7px; }
+    .terminal-prompt { padding-top:4px; color:#58a6ff; font:700 13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:nowrap; }
+    textarea { width:100%; min-height:40px; max-height:150px; resize:none; border:0; padding:4px 2px 6px; background:transparent; color:#f0f6fc; caret-color:#7ee787; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; outline:none; }
     .send-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    .context-pill { display:inline-flex; align-items:center; gap:5px; color:#676767; font-size:11px; }
+    .context-pill { display:inline-flex; align-items:center; gap:5px; color:#8b949e; font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
     .context-pill::before { content:""; width:7px; height:7px; border-radius:50%; background:#10a37f; }
-    .hint { display:block; margin-top:6px; text-align:center; color:#999; font-size:10px; }
-    .send { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:50%; background:#111; color:white; padding:0; font-size:18px; line-height:1; cursor:pointer; }
-    .send:disabled { background:#d7d7d7; cursor:default; }
+    .hint { display:block; margin-top:5px; text-align:center; color:#6e7681; font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .send { width:29px; height:27px; display:grid; place-items:center; border:1px solid #3b82f6; border-radius:5px; background:#1f6feb; color:white; padding:0; font-size:15px; line-height:1; cursor:pointer; }
+    .send:disabled { border-color:#30363d; background:#21262d; color:#6e7681; cursor:default; }
     .selection { color:#75523b; font-size:12px; margin-bottom:7px; max-height:42px; overflow:hidden; }
   </style>
   <aside class="panel">
@@ -80,9 +85,9 @@ root.innerHTML = `
     <div class="workspace">
       <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿 <small class="transcript-count"></small></h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
       <section class="view" data-panel="agent">
-        <div class="agent-titlebar"><div class="agent-brand"><span class="agent-context-dot" title="已连接课程上下文"></span><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select></div><div class="agent-controls"><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div></div>
-        <div class="chat"><div class="bubble system welcome">课程 Agent 已连接 <span data-category-label>AI课</span> 工作区，并携带当前课程上下文。你可以追问课程、补充背景知识，或让它直接执行任务。</div></div>
-        <div class="composer"><div class="selection"></div><div class="composer-shell"><textarea placeholder="给课程 Agent 发消息"></textarea><div class="send-row"><span class="context-pill">当前课程</span><button class="send" title="发送">↑</button></div></div><span class="hint">Enter 发送 · Shift + Enter 换行</span></div>
+        <div class="agent-titlebar"><div class="agent-brand"><span class="agent-context-dot" title="Codex 已连接"></span><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select></div><div class="agent-controls"><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div><div class="terminal-path">正在定位课程目录…</div></div>
+        <div class="chat"><div class="bubble system welcome">Codex terminal · <span data-category-label>正在连接</span><br>正在定位当前课程工作区…</div></div>
+        <div class="composer"><div class="selection"></div><div class="composer-shell"><div class="terminal-input-row"><span class="terminal-prompt">codex ›</span><textarea placeholder="输入任务或问题"></textarea></div><div class="send-row"><span class="context-pill">cwd: current course</span><button class="send" title="执行">↵</button></div></div><span class="hint">Enter 执行 · Shift + Enter 换行</span></div>
       </section>
     </div>
   </aside>`;
@@ -102,6 +107,7 @@ const selectionLabel = root.querySelector(".selection");
 const chat = root.querySelector(".chat");
 const agentModelSelect = root.querySelector(".agent-model");
 const agentEffortSelect = root.querySelector(".agent-effort");
+const terminalPath = root.querySelector(".terminal-path");
 let availableAgentModels = [];
 let processing = false;
 let segments = [];
@@ -539,11 +545,11 @@ function resetAgentView() {
   textarea.value = "";
   streamingBubble = null;
   codexEventCursor = Date.now() / 1000;
-  chat.innerHTML = `<div class="bubble system welcome">已连接 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 工作区，并携带当前课程上下文。你可以追问课程、补充背景知识，或让 Agent 直接执行任务。</div>`;
+  chat.innerHTML = `<div class="bubble system welcome">Codex terminal · <span data-category-label>${escapeHtml(categorySelect.value || "正在连接")}</span><br>当前课程目录已连接。输入任务后按 Enter 执行。</div>`;
   restoreAgentHistory();
   const sendButton = root.querySelector(".send");
   sendButton.disabled = false;
-  sendButton.textContent = "↑";
+  sendButton.textContent = "↵";
 }
 
 function agentHistoryStorageKey(courseId = currentCourseId()) {
@@ -587,6 +593,8 @@ function handleCourseChange() {
   needsEnhancement = false;
   courseAudioIndex = null;
   currentCourseMetadata = {};
+  terminalPath.textContent = "正在定位课程目录…";
+  terminalPath.title = "";
   stopSegmentPlayback("已切换课程");
   studyAudio?.pause();
   studyAudio = null;
@@ -621,7 +629,9 @@ async function identifyCourseCategory() {
       ledgerClassifiedCourseIds.add(courseId);
       localStorage.setItem(categoryStorageKey(), result.category);
       root.querySelector("[data-category-label]").textContent = result.category;
-      currentCourseMetadata = {...currentCourseMetadata, title: result.title, album_title: result.album_title};
+      currentCourseMetadata = {...currentCourseMetadata, title: result.title, album_title: result.album_title, workspace_path: result.workspace_path || ""};
+      terminalPath.textContent = result.workspace_path || `课程 ${courseId} · 资料目录待生成`;
+      terminalPath.title = result.workspace_path || "";
       statusText.textContent = `已按人工总账归类为 ${result.category}`;
       return;
     }
@@ -841,13 +851,13 @@ async function sendAgentMessage() {
       addBubble("system", data.direct_answer);
       agentSending = false;
       sendButton.disabled = false;
-      sendButton.textContent = "↑";
+      sendButton.textContent = "↵";
     }
   } catch (error) {
     addBubble("system", `Codex 连接失败：${error.message}`);
     agentSending = false;
     sendButton.disabled = false;
-    sendButton.textContent = "↑";
+    sendButton.textContent = "↵";
   }
   textarea.value = "";
   selectedText = "";
@@ -900,7 +910,7 @@ function handleCodexEvent(event) {
     agentSending = false;
     const sendButton = root.querySelector(".send");
     sendButton.disabled = false;
-    sendButton.textContent = "↑";
+    sendButton.textContent = "↵";
   } else if (method === "error") {
     const message = params.error?.message || params.message || "Codex 连接发生错误";
     if (!params.willRetry) {
@@ -908,7 +918,7 @@ function handleCodexEvent(event) {
       agentSending = false;
       const sendButton = root.querySelector(".send");
       sendButton.disabled = false;
-      sendButton.textContent = "↑";
+      sendButton.textContent = "↵";
     }
   } else if (method.includes("requestApproval") && event.id != null) {
     addApprovalCard(String(event.id), method, params);

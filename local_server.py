@@ -1054,12 +1054,17 @@ class Handler(BaseHTTPRequestHandler):
                 for column in board["columns"]:
                     course = next((item for item in column["courses"] if int(item.get("course_id")) == course_number), None)
                     if course:
+                        workspace_dir, _ = find_archived_course(course.get("source_url", ""))
+                        workspace_path = str(workspace_dir) if workspace_dir else ""
+                        if workspace_path.startswith(str(Path.home())):
+                            workspace_path = "~" + workspace_path[len(str(Path.home())):]
                         self._json({
                             "found": True,
                             "course_id": course_number,
                             "category": column["category"],
                             "title": course.get("display_title") or course.get("title"),
                             "album_title": course.get("album_title", ""),
+                            "workspace_path": workspace_path,
                             "categories": [item["category"] for item in board["columns"]],
                         })
                         return
