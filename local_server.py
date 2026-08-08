@@ -565,6 +565,12 @@ def cool_down(job_id: str, seconds: int, label: str) -> None:
 
 
 def run_course_job(job_id: str, payload: dict, enhance_after: bool = True):
+    try:
+        resolved_category = final_course_category_map().get(int(payload.get("course_id") or course_id(payload["course_url"])))
+    except (TypeError, ValueError):
+        resolved_category = None
+    if resolved_category:
+        payload = {**payload, "course_category": resolved_category}
     url = payload["course_url"]
     title = payload.get("course_title") or "course"
     items = payload.get("items", [])
@@ -686,6 +692,12 @@ def run_course_job(job_id: str, payload: dict, enhance_after: bool = True):
 
 def run_enhancement_job(job_id: str, payload: dict, cache_path: Path):
     try:
+        try:
+            resolved_category = final_course_category_map().get(int(payload.get("course_id") or course_id(payload["course_url"])))
+        except (TypeError, ValueError):
+            resolved_category = None
+        if resolved_category:
+            payload = {**payload, "course_category": resolved_category}
         directory, metadata = find_archived_course(payload["course_url"])
         if not directory:
             raise RuntimeError("没有找到这节课的原始稿")

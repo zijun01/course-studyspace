@@ -20,7 +20,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 LIBRARY = ROOT / "library"
 PROMPT = ROOT / "prompts" / "course-transcript-enhancement-v1.md"
-CATEGORIES = ("AI课", "写作课", "自学课", "专注课", "思考课", "财富课", "家庭教育课", "教练课", "英语课")
+CATEGORIES = (
+    "AI课-Agent版", "AI课-Chat版", "写作课", "自学课", "专注课", "思考课",
+    "财富课", "投资课", "相约七年直播", "家庭教育课", "教练课", "英语课",
+)
 
 
 def safe_name(value: str, limit: int = 72) -> str:
