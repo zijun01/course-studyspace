@@ -122,9 +122,43 @@ def course_id(url: str) -> str:
 def load_classification_reviews() -> dict:
     try:
         payload = json.loads(CLASSIFICATION_REVIEW_PATH.read_text(encoding="utf-8"))
-        return payload if isinstance(payload.get("reviews"), dict) else {"schema_version": "1.0", "reviews": {}}
+        return payload if isinstance(payload.get("reviews"), dict) else {"schema_version": "1.0", "reviews": {}, "album_orders": {}}
     except (OSError, json.JSONDecodeError):
-        return {"schema_version": "1.0", "reviews": {}}
+        return {"schema_version": "1.0", "reviews": {}, "album_orders": {}}
+
+
+def album_order_key(target: dict) -> str:
+    album_id = target.get("album_id")
+    return f"id:{album_id}" if album_id is not None else f"title:{target.get('album_title') or '未分专辑'}"
+
+
+def ordered_review_courses(targets: list[dict], saved_orders: dict) -> list[dict]:
+    groups = {}
+    album_keys = []
+    for target in targets:
+        key = album_order_key(target)
+        if key not in groups:
+            groups[key] = []
+            album_keys.append(key)
+        groups[key].append(target)
+    courses = []
+    global_index = 0
+    for key in album_keys:
+        base = groups[key]
+        by_id = {str(item.get("course_id")): item for item in base}
+        stored = [str(value) for value in saved_orders.get(key, []) if str(value) in by_id]
+        effective_ids = stored + [value for value in by_id if value not in stored]
+        original_positions = {str(item.get("course_id")): index for index, item in enumerate(base, 1)}
+        for album_index, course_number in enumerate(effective_ids, 1):
+            global_index += 1
+            target = by_id[course_number]
+            courses.append({
+                **target,
+                "current_global_order": global_index,
+                "original_album_order": original_positions[course_number],
+                "current_album_order": album_index,
+            })
+    return courses
 
 
 def classification_review_payload() -> dict:
@@ -138,16 +172,7 @@ def classification_review_payload() -> dict:
         category = str(review.get("decided_category") or "").strip()
         if category and category not in categories:
             categories.append(category)
-    album_positions = {}
-    courses = []
-    for global_index, target in enumerate(targets, 1):
-        album_key = str(target.get("album_id"))
-        album_positions[album_key] = album_positions.get(album_key, 0) + 1
-        courses.append({
-            **target,
-            "current_global_order": global_index,
-            "current_album_order": album_positions[album_key],
-        })
+    courses = ordered_review_courses(targets, review_payload.get("album_orders", {}))
     return {
         "courses": courses,
         "reviews": reviews,
@@ -175,6 +200,16 @@ def save_classification_review(course_number: int, decided_category: str, note: 
     with _classification_review_lock:
         payload = load_classification_reviews()
         now = datetime.now(timezone.utc).isoformat()
+        key = album_order_key(target)
+        same_album = [item for item in targets_payload.get("targets", []) if album_order_key(item) == key]
+        base_ids = [str(item.get("course_id")) for item in same_album]
+        existing_order = [str(value) for value in payload.get("album_orders", {}).get(key, []) if str(value) in base_ids]
+        effective_order = existing_order + [value for value in base_ids if value not in existing_order]
+        moving_id = str(course_number)
+        effective_order.remove(moving_id)
+        insert_at = min((decided_order or len(effective_order) + 1) - 1, len(effective_order))
+        effective_order.insert(insert_at, moving_id)
+        payload.setdefault("album_orders", {})[key] = effective_order
         review = {
             "course_id": course_number,
             "title": target.get("title", ""),
