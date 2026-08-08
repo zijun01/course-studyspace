@@ -16,9 +16,7 @@ root.innerHTML = `
     .close { border:0; background:transparent; color:#777268; font-size:22px; cursor:pointer; }
     .status-row { display:flex; align-items:center; gap:9px; margin-top:13px; }
     .category { border:1px solid #d5d0c5; border-radius:9px; padding:7px 8px; background:#fff; color:#4f4b43; font-size:12px; }
-    .record, .inventory, .bulk { border:0; border-radius:10px; background:#20201d; color:white; padding:9px 13px; font-weight:600; cursor:pointer; }
-    .inventory { background:#716353; }
-    .bulk { background:#45635a; }
+    .record { border:0; border-radius:10px; background:#20201d; color:white; padding:9px 13px; font-weight:600; cursor:pointer; }
     .record.stop { background:#a53d35; }
     .dot { width:8px; height:8px; border-radius:50%; background:#aaa59a; }
     .dot.live { background:#d54b40; box-shadow:0 0 0 4px rgba(213,75,64,.12); }
@@ -76,7 +74,7 @@ root.innerHTML = `
   <aside class="panel">
     <header>
       <div class="top"><h1>课程学习助手</h1><button class="close" title="关闭">×</button></div>
-      <div class="status-row"><button class="record">生成整节文字稿</button><button class="inventory" title="只读取课程名称与目录，不下载音视频">盘点全部课程</button><button class="bulk" title="把核心课程加入本机转录与润色队列">预处理核心课程</button><select class="category" title="课程类别"><option value="">请选择课程类别</option><option>AI课</option><option>写作课</option><option>自学课</option><option>专注课</option><option>思考课</option><option>财富课</option><option>家庭教育课</option><option>教练课</option><option>英语课</option></select><span class="dot"></span><span class="status">无需播放课程</span></div>
+      <div class="status-row"><button class="record">生成整节文字稿</button><select class="category" title="课程类别"><option value="">请选择课程类别</option><option>AI课</option><option>写作课</option><option>自学课</option><option>专注课</option><option>思考课</option><option>财富课</option><option>家庭教育课</option><option>教练课</option><option>英语课</option></select><span class="dot"></span><span class="status">无需播放课程</span></div>
       <div class="progress-wrap" hidden><div class="progress-track"><div class="progress-fill"></div></div><span class="progress-label">0%</span></div>
     </header>
     <div class="workspace">
@@ -91,8 +89,6 @@ root.innerHTML = `
 
 const panel = root.querySelector(".panel");
 const recordButton = root.querySelector(".record");
-const inventoryButton = root.querySelector(".inventory");
-const bulkButton = root.querySelector(".bulk");
 const dot = root.querySelector(".dot");
 const statusText = root.querySelector(".status");
 const progressWrap = root.querySelector(".progress-wrap");
@@ -252,184 +248,6 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     clearTimeout(timer);
   }
 }
-
-function apiItems(payload) {
-  const value = payload?.data ?? payload;
-  if (Array.isArray(value)) return value;
-  for (const key of ["items", "results", "list", "communities", "albums", "courses"]) {
-    if (Array.isArray(value?.[key])) return value[key];
-  }
-  return [];
-}
-
-async function songyJson(path, token) {
-  const response = await fetchWithTimeout(`https://bandu-api.songy.info${path}`, {
-    headers: {Authorization: `Bearer ${token}`}
-  }, 20000);
-  if (!response.ok) throw new Error(`课程网站接口返回 ${response.status}`);
-  return response.json();
-}
-
-async function runCatalogInventory({automatic = false} = {}) {
-  inventoryButton.disabled = true;
-  inventoryButton.textContent = "正在盘点…";
-  updateProgress({status: "reading"});
-  statusText.textContent = "正在读取课程分类与专辑…";
-  try {
-    const rawToken = localStorage.getItem("flutter.access_token");
-    const token = rawToken ? JSON.parse(rawToken) : "";
-    if (!token) throw new Error("没有找到当前登录状态，请重新登录课程网站");
-
-    let communities = apiItems(await songyJson("/v2/communities?filter=&limit=100&offset=0", token));
-    if (!communities.length) {
-      const main = (await songyJson("/v2/communities/main", token))?.data;
-      communities = main ? [main] : [];
-    }
-    if (!communities.length) throw new Error("没有读取到你账号中的课程社群");
-
-    const tree = [];
-    let albumCount = 0;
-    let courseCount = 0;
-    for (const community of communities) {
-      const communityId = community.id ?? community.community_id;
-      if (!communityId) continue;
-      const albums = apiItems(await songyJson(`/v2/communities/${communityId}/albums`, token));
-      const cleanAlbums = [];
-      for (const album of albums) {
-        const albumId = album.id ?? album.album_id;
-        if (!albumId) continue;
-        statusText.textContent = `正在读取专辑：${album.title || album.name || albumId}`;
-        const courses = apiItems(await songyJson(`/v2/albums/${albumId}/courses?limit=1000&offset=0`, token));
-        cleanAlbums.push({
-          id: albumId,
-          title: album.title || album.name || `专辑-${albumId}`,
-          description: album.description || "",
-          courses: courses.map((course) => ({
-            id: course.id ?? course.course_id,
-            title: course.title || course.name || `课程-${course.id ?? course.course_id}`,
-            order: course.order ?? course.sort ?? null,
-            category: course.category || course.type || "",
-            created_at: course.created_at || "",
-            updated_at: course.updated_at || ""
-          })).filter((course) => course.id)
-        });
-        albumCount += 1;
-        courseCount += courses.length;
-      }
-      tree.push({
-        id: communityId,
-        title: community.title || community.name || `社群-${communityId}`,
-        albums: cleanAlbums
-      });
-    }
-    const response = await fetch("http://127.0.0.1:4317/catalog/import", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({source: "songy-account", captured_at: new Date().toISOString(), communities: tree})
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "本机资料总账保存失败");
-    localStorage.setItem("course-studyspace-last-inventory", new Date().toISOString());
-    updateProgress({status: "complete"});
-    statusText.textContent = `盘点完成：${albumCount} 个专辑，${courseCount} 节课程`;
-    inventoryButton.textContent = "重新盘点";
-  } catch (error) {
-    updateProgress({status: "error"});
-    statusText.textContent = `盘点失败：${error.name === "AbortError" ? "课程网站响应超时" : error.message}`;
-    inventoryButton.textContent = "重试盘点";
-  } finally {
-    inventoryButton.disabled = false;
-  }
-}
-
-inventoryButton.onclick = () => runCatalogInventory();
-
-// Refresh the metadata-only account catalog at most once a day. This does not
-// request course contents or media URLs and therefore never starts transcription.
-setTimeout(() => {
-  const last = Date.parse(localStorage.getItem("course-studyspace-last-inventory") || "");
-  if (!Number.isFinite(last) || Date.now() - last > 24 * 60 * 60 * 1000) {
-    runCatalogInventory({automatic: true});
-  }
-}, 1200);
-
-async function runBulkCoursePreparation() {
-  if (bulkButton.disabled) return;
-  bulkButton.disabled = true;
-  bulkButton.textContent = "正在读取核心课程…";
-  updateProgress({status: "reading"});
-  try {
-    const rawToken = localStorage.getItem("flutter.access_token");
-    const token = rawToken ? JSON.parse(rawToken) : "";
-    if (!token) throw new Error("没有找到当前登录状态，请重新登录课程网站");
-    const targetResponse = await fetch("http://127.0.0.1:4317/corpus/course-targets");
-    const targetData = await targetResponse.json();
-    if (!targetResponse.ok) throw new Error(targetData.error || "无法读取核心课程清单");
-    const targets = targetData.targets || [];
-    let accepted = 0;
-    let skipped = 0;
-    const failed = [];
-    for (let index = 0; index < targets.length; index += 1) {
-      const target = targets[index];
-      const percent = Math.round((index / Math.max(1, targets.length)) * 100);
-      progressWrap.hidden = false;
-      progressWrap.classList.remove("indeterminate");
-      progressFill.style.width = `${percent}%`;
-      progressLabel.textContent = `${percent}% · ${index}/${targets.length}`;
-      statusText.textContent = `正在读取 ${target.title}`;
-      try {
-        const headers = {Authorization: `Bearer ${token}`};
-        const contentsResponse = await fetchWithTimeout(
-          `https://bandu-api.songy.info/v2/courses/${target.course_id}/contents`, {headers}, 25000
-        );
-        if (!contentsResponse.ok) throw new Error(`内容接口 ${contentsResponse.status}`);
-        const contentsJson = await contentsResponse.json();
-        const contents = contentsJson.data || contentsJson;
-        if (!Array.isArray(contents)) throw new Error("课程内容格式无法识别");
-        const items = contents.map((item) => {
-          const media = ["audio", "video"].includes(item.category) ? chooseMediaSource(item) : {url: "", key: "", strategy: ""};
-          return {
-            id: item.id, order: item.order, category: item.category,
-            duration: item.duration || item.attachment?.duration || 0,
-            text: item.category === "text" ? item.content : "",
-            url: media.url, media_source_key: media.key, media_strategy: media.strategy
-          };
-        });
-        const enqueueResponse = await fetch("http://127.0.0.1:4317/corpus/course-enqueue", {
-          method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({
-            course_id: target.course_id, course_url: target.source_url,
-            course_title: target.title, course_category: target.course_category,
-            album_id: target.album_id, album_title: target.album_title, items
-          })
-        });
-        const enqueue = await enqueueResponse.json();
-        if (!enqueueResponse.ok) throw new Error(enqueue.error || "加入本机队列失败");
-        if (enqueue.queued) accepted += 1;
-        else skipped += 1;
-      } catch (error) {
-        failed.push({course_id: target.course_id, title: target.title, error: error.message});
-      }
-    }
-    localStorage.setItem("course-studyspace-bulk-harvest", JSON.stringify({at: new Date().toISOString(), failed}));
-    updateProgress({status: "complete"});
-    statusText.textContent = `后台队列已建立：新增 ${accepted}，已有 ${skipped}，读取失败 ${failed.length}`;
-    bulkButton.textContent = failed.length ? "重试失败课程" : "核心课程已入队";
-  } catch (error) {
-    updateProgress({status: "error"});
-    statusText.textContent = `批量准备失败：${error.message}`;
-    bulkButton.textContent = "重试预处理";
-  } finally {
-    bulkButton.disabled = false;
-  }
-}
-
-bulkButton.onclick = runBulkCoursePreparation;
-
-setTimeout(() => {
-  const prior = localStorage.getItem("course-studyspace-bulk-harvest");
-  if (!prior) runBulkCoursePreparation();
-}, 2500);
 
 function chooseMediaSource(item) {
   const candidates = [];
