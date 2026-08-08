@@ -33,6 +33,8 @@ class CodexBridge:
         self._threads = self._load_threads()
         self._thread_categories = {thread_id: category for category, thread_id in self._threads.items()}
         self._active_threads = set()
+        self._model_cache = None
+        self._model_cache_at = 0.0
 
     def _load_threads(self):
         try:
@@ -175,14 +177,26 @@ class CodexBridge:
             "transport": "本机 Codex app-server",
         }
 
-    def direct_answer(self, text: str):
+    def list_models(self):
+        if self._model_cache and time.time() - self._model_cache_at < 300:
+            return self._model_cache
+        self.start()
+        result = self.request("model/list", {"includeHidden": False, "limit": 100}, timeout=30)
+        models = [item for item in (result or {}).get("data", []) if not item.get("hidden")]
+        self._model_cache = models
+        self._model_cache_at = time.time()
+        return models
+
+    def direct_answer(self, text: str, model: str | None = None, effort: str | None = None):
         compact = re.sub(r"\s+", "", text).lower()
         if re.search(r"(你|当前|agent)?.{0,5}(什么|哪个|哪一个).{0,4}(模型|model)|你是.{0,8}(模型|gpt)", compact):
             info = self.runtime_info()
+            active_model = model or info["model"]
+            active_effort = effort or info["reasoning_effort"]
             return (
                 f"当前课程 Agent 通过 {info['transport']} 运行；实际配置模型是 "
-                f"{info['model']}，推理强度是 {info['reasoning_effort']}。"
-                "这是从本机配置读取的，不采用模型自己的身份自述。"
+                f"{active_model}，推理强度是 {active_effort}。"
+                "这是从页面选择与本机配置读取的，不采用模型自己的身份自述。"
             )
         return None
 
@@ -202,7 +216,7 @@ class CodexBridge:
                 return metadata_path.parent
         return None
 
-    def send_message(self, category: str, text: str, course_id: int | None = None, selection: str = ""):
+    def send_message(self, category: str, text: str, course_id: int | None = None, selection: str = "", model: str | None = None, effort: str | None = None):
         result = self.ensure_thread(category)
         thread_id = result["thread"]["id"]
         course_dir = self._course_dir(category, course_id)
@@ -218,10 +232,15 @@ class CodexBridge:
         if selection:
             context += f"用户当前划选的课程原文：\n{selection}\n\n"
         prompt = context + "\n用户的问题或任务：\n" + text
-        return self.request("turn/start", {
+        params = {
             "threadId": thread_id,
             "input": [{"type": "text", "text": prompt}],
-        }, timeout=30)
+        }
+        if model:
+            params["model"] = model
+        if effort:
+            params["effort"] = effort
+        return self.request("turn/start", params, timeout=30)
 
     def events(self, category: str, since: float = 0):
         return [event for event in self._events[category] if event["at"] > since]

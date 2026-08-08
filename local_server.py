@@ -823,6 +823,12 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
+        if parsed.path == "/codex/models":
+            try:
+                self._json({"models": codex_bridge.list_models(), "runtime": codex_bridge.runtime_info()})
+            except (RuntimeError, OSError, TimeoutError) as exc:
+                self._json({"error": str(exc), "runtime": codex_bridge.runtime_info()}, HTTPStatus.SERVICE_UNAVAILABLE)
+            return
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
@@ -906,7 +912,9 @@ class Handler(BaseHTTPRequestHandler):
                 text = str(payload.get("text", "")).strip()
                 if not text:
                     raise ValueError("问题不能为空")
-                direct_answer = codex_bridge.direct_answer(text)
+                model = str(payload.get("model") or "").strip() or None
+                effort = str(payload.get("effort") or "").strip() or None
+                direct_answer = codex_bridge.direct_answer(text, model=model, effort=effort)
                 if direct_answer:
                     self._json({"ok": True, "direct_answer": direct_answer, "runtime": codex_bridge.runtime_info()})
                     return
@@ -915,6 +923,8 @@ class Handler(BaseHTTPRequestHandler):
                     text=text,
                     course_id=payload.get("course_id"),
                     selection=str(payload.get("selection", "")),
+                    model=model,
+                    effort=effort,
                 )
                 self._json({"ok": True, "turn": result}, HTTPStatus.ACCEPTED)
             except (json.JSONDecodeError, ValueError, RuntimeError, OSError) as exc:

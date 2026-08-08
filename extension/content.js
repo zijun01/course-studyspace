@@ -34,6 +34,11 @@ root.innerHTML = `
     .view { min-width:0; min-height:0; display:flex; flex-direction:column; }
     .view + .view { border-left:1px solid #dedbd2; }
     .column-title { margin:0; padding:12px 18px 10px; border-bottom:1px solid #e9e5dc; font-size:13px; letter-spacing:.04em; color:#6f6a61; }
+    .agent-titlebar { min-height:45px; padding:7px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; border-bottom:1px solid #e9e5dc; }
+    .agent-titlebar .column-title { padding:0; border:0; white-space:nowrap; }
+    .agent-controls { display:flex; min-width:0; gap:6px; }
+    .agent-select { min-width:0; max-width:150px; border:1px solid #d8d3c9; border-radius:8px; padding:6px 7px; background:#fff; color:#4f4b43; font:11px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
+    .agent-effort { max-width:78px; }
     .transcript-count { margin-left:8px; color:#8b857b; font-size:11px; font-weight:500; letter-spacing:0; }
     .transcript { overflow:auto; padding:15px 18px 100px; }
     .empty { margin:46px 18px; padding:22px; text-align:center; color:#858075; border:1px dashed #d5d0c5; border-radius:14px; }
@@ -69,7 +74,7 @@ root.innerHTML = `
     <div class="workspace">
       <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿 <small class="transcript-count"></small></h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
       <section class="view" data-panel="agent">
-        <h2 class="column-title">课程 Agent</h2>
+        <div class="agent-titlebar"><h2 class="column-title">课程 Agent</h2><div class="agent-controls"><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div></div>
         <div class="chat"><div class="bubble system">右侧连接到 <span data-category-label>AI课</span> 的本机 Codex 工作区。它可以读取课程、修改工作区文件、运行工具；需要额外权限时会在这里请求你的批准。</div></div>
         <div class="composer"><div class="selection"></div><textarea placeholder="问课程内容，也可以随手问任何相关问题…"></textarea><div class="send-row"><span class="hint">已携带当前课程上下文 · 可自由提问</span><button class="send">发送</button></div></div>
       </section>
@@ -91,6 +96,9 @@ const transcriptCount = root.querySelector(".transcript-count");
 const textarea = root.querySelector("textarea");
 const selectionLabel = root.querySelector(".selection");
 const chat = root.querySelector(".chat");
+const agentModelSelect = root.querySelector(".agent-model");
+const agentEffortSelect = root.querySelector(".agent-effort");
+let availableAgentModels = [];
 let processing = false;
 let segments = [];
 let selectedText = "";
@@ -111,6 +119,47 @@ const albumCategoryMap = {"3": "写作课"};
 function categoryStorageKey() {
   return `course-studyspace-category-${currentCourseId() || "unknown"}`;
 }
+
+function updateAgentEfforts() {
+  const selected = availableAgentModels.find((item) => item.model === agentModelSelect.value);
+  const options = selected?.supportedReasoningEfforts || [];
+  agentEffortSelect.innerHTML = "";
+  for (const item of options) {
+    const option = document.createElement("option");
+    option.value = item.reasoningEffort;
+    option.textContent = ({low:"快速", medium:"标准", high:"深入", xhigh:"很深入", max:"极致", ultra:"并行"})[item.reasoningEffort] || item.reasoningEffort;
+    if (item.reasoningEffort === selected.defaultReasoningEffort) option.selected = true;
+    agentEffortSelect.appendChild(option);
+  }
+  agentEffortSelect.disabled = options.length === 0;
+}
+
+async function loadAgentModels() {
+  try {
+    const response = await fetch("http://127.0.0.1:4317/codex/models");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "读取失败");
+    availableAgentModels = data.models || [];
+    const configuredModel = availableAgentModels.some((item) => item.model === data.runtime?.model)
+      ? data.runtime.model
+      : availableAgentModels.find((item) => item.isDefault)?.model;
+    agentModelSelect.innerHTML = "";
+    for (const item of availableAgentModels) {
+      const option = document.createElement("option");
+      option.value = item.model;
+      option.textContent = item.displayName || item.model;
+      option.title = item.description || "";
+      if (item.model === configuredModel) option.selected = true;
+      agentModelSelect.appendChild(option);
+    }
+    updateAgentEfforts();
+  } catch (_) {
+    agentModelSelect.innerHTML = '<option value="">模型列表不可用</option>';
+    agentEffortSelect.disabled = true;
+  }
+}
+
+agentModelSelect.addEventListener("change", updateAgentEfforts);
 
 function restoreCategory() {
   const albumCategory = albumCategoryMap[currentAlbumId()] || "";
@@ -895,7 +944,7 @@ async function sendAgentMessage() {
     const response = await fetch("http://127.0.0.1:4317/codex/message", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({category: categorySelect.value, course_id: Number(currentCourseId()) || null, text: question || "请处理我划选的内容", selection: selectedText})
+      body: JSON.stringify({category: categorySelect.value, course_id: Number(currentCourseId()) || null, text: question || "请处理我划选的内容", selection: selectedText, model: agentModelSelect.value || null, effort: agentEffortSelect.value || null})
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Codex 无法开始任务");
@@ -1012,3 +1061,4 @@ chrome.runtime.onMessage.addListener((message) => {
 loadTranscript();
 refreshCourseStatus();
 identifyCourseCategory();
+loadAgentModels();
