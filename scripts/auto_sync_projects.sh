@@ -1,6 +1,10 @@
 #!/bin/zsh
 set -euo pipefail
 
+# A GUI launch agent can inherit a stale local proxy. GitHub synchronization
+# should use the current direct network path instead of a dead localhost port.
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
+
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
 runtime_dir="$project_dir/runtime"
@@ -53,9 +57,18 @@ sync_repo() {
     return 1
   fi
 
-  git -C "$repo" diff --cached --check
-  git -C "$repo" commit -m "sync: $stamp"
-  git -C "$repo" push origin HEAD
+  if ! git -C "$repo" diff --cached --check; then
+    print -r -- "[$stamp] BLOCKED whitespace check failed: ${repo:t}" >>"$log_file"
+    return 1
+  fi
+  if ! git -C "$repo" commit -m "sync: $stamp"; then
+    print -r -- "[$stamp] FAILED commit: ${repo:t}" >>"$log_file"
+    return 1
+  fi
+  if ! git -C "$repo" push origin HEAD; then
+    print -r -- "[$stamp] FAILED push; local commit retained: ${repo:t}" >>"$log_file"
+    return 1
+  fi
   print -r -- "[$stamp] pushed: ${repo:t}" >>"$log_file"
 }
 
