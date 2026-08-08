@@ -75,6 +75,11 @@ root.innerHTML = `
     .send { width:29px; height:27px; display:grid; place-items:center; border:1px solid #75523b; border-radius:5px; background:#75523b; color:white; padding:0; font-size:15px; line-height:1; cursor:pointer; }
     .send:disabled { border-color:#d5d0c5; background:#eeeae1; color:#aaa399; cursor:default; }
     .selection { color:#75523b; font-size:12px; margin-bottom:7px; max-height:42px; overflow:hidden; }
+    .legacy-agent { display:none!important; }
+    .native-terminal { min-height:0; flex:1; padding:8px 5px 5px 9px; overflow:hidden; background:#101014; }
+    .native-terminal .xterm { height:100%; }
+    .native-terminal .xterm-viewport { scrollbar-color:#555 #18181c; }
+    .terminal-restart { border:1px solid #d5d0c5; border-radius:6px; padding:4px 8px; background:#f4f0e7; color:#6f6a61; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; cursor:pointer; }
   </style>
   <aside class="panel">
     <header>
@@ -85,12 +90,16 @@ root.innerHTML = `
     <div class="workspace">
       <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿 <small class="transcript-count"></small></h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
       <section class="view" data-panel="agent">
-        <div class="agent-titlebar"><div class="agent-brand"><span class="agent-context-dot" title="Codex 已连接"></span><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select></div><div class="agent-controls"><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div><div class="terminal-path">正在定位课程目录…</div></div>
-        <div class="chat"><div class="bubble system welcome">Codex terminal · <span data-category-label>正在连接</span><br>正在定位当前课程工作区…</div></div>
-        <div class="composer"><div class="selection"></div><div class="composer-shell"><div class="terminal-input-row"><span class="terminal-prompt">codex ›</span><textarea placeholder="输入任务或问题"></textarea></div><div class="send-row"><span class="context-pill">cwd: current course</span><button class="send" title="执行">↵</button></div></div><span class="hint">Enter 执行 · Shift + Enter 换行</span></div>
+        <div class="agent-titlebar"><div class="agent-brand"><span class="agent-context-dot" title="Codex CLI"></span><strong style="font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace">codex</strong></div><button class="terminal-restart" title="重新启动当前课程的 Codex">重新启动</button><div class="terminal-path">正在定位课程目录…</div></div>
+        <div class="native-terminal"></div>
+        <div class="legacy-agent"><select class="agent-model"><option value=""></option></select><select class="agent-effort"><option value=""></option></select><div class="chat"><div class="bubble system welcome"><span data-category-label>正在连接</span></div></div><div class="composer"><div class="selection"></div><textarea></textarea><button class="send">↵</button></div></div>
       </section>
     </div>
   </aside>`;
+const terminalStyles = document.createElement("link");
+terminalStyles.rel = "stylesheet";
+terminalStyles.href = chrome.runtime.getURL("vendor/xterm.css");
+root.prepend(terminalStyles);
 
 const panel = root.querySelector(".panel");
 const recordButton = root.querySelector(".record");
@@ -108,6 +117,22 @@ const chat = root.querySelector(".chat");
 const agentModelSelect = root.querySelector(".agent-model");
 const agentEffortSelect = root.querySelector(".agent-effort");
 const terminalPath = root.querySelector(".terminal-path");
+const nativeTerminalElement = root.querySelector(".native-terminal");
+const nativeTerminal = new Terminal({
+  cursorBlink: true,
+  convertEol: false,
+  scrollback: 10000,
+  fontFamily: '"SFMono-Regular", Menlo, Monaco, Consolas, monospace',
+  fontSize: 12,
+  lineHeight: 1.15,
+  theme: {background:"#101014", foreground:"#e6e6e6", cursor:"#f2f2f2", selectionBackground:"#4b5563", black:"#202024", brightBlack:"#66666c"}
+});
+nativeTerminal.open(nativeTerminalElement);
+nativeTerminal.write("\x1b[38;5;245m正在打开当前课程的 Codex…\x1b[0m\r\n");
+let nativeTerminalSessionId = "";
+let nativeTerminalCursor = 0;
+let nativeTerminalGeneration = 0;
+let nativeTerminalPolling = false;
 let availableAgentModels = [];
 let processing = false;
 let segments = [];
@@ -263,6 +288,85 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
     clearTimeout(timer);
   }
 }
+
+function nativeTerminalSize() {
+  return {
+    cols: Math.max(30, Math.floor(nativeTerminalElement.clientWidth / 7.25)),
+    rows: Math.max(8, Math.floor(nativeTerminalElement.clientHeight / 15.5))
+  };
+}
+
+async function startNativeTerminal(force = false) {
+  const courseId = currentCourseId();
+  if (!courseId) return;
+  const generation = ++nativeTerminalGeneration;
+  nativeTerminalSessionId = "";
+  nativeTerminalCursor = 0;
+  nativeTerminal.reset();
+  nativeTerminal.write("\x1b[38;5;245m正在进入课程目录并启动 Codex…\x1b[0m\r\n");
+  try {
+    const response = await fetch("http://127.0.0.1:4317/terminal/start", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({course_id: Number(courseId), force, ...nativeTerminalSize()})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "终端启动失败");
+    if (generation !== nativeTerminalGeneration || currentCourseId() !== courseId) return;
+    nativeTerminalSessionId = data.session_id;
+    terminalPath.textContent = data.cwd.replace(/^\/Users\/[^/]+/, "~");
+    terminalPath.title = data.cwd;
+    nativeTerminal.focus();
+    pollNativeTerminal();
+  } catch (error) {
+    nativeTerminal.write(`\r\n\x1b[31m${error.message}\x1b[0m\r\n`);
+  }
+}
+
+async function pollNativeTerminal() {
+  if (nativeTerminalPolling || !nativeTerminalSessionId) return;
+  nativeTerminalPolling = true;
+  const sessionId = nativeTerminalSessionId;
+  try {
+    const response = await fetch(`http://127.0.0.1:4317/terminal/output?session_id=${encodeURIComponent(sessionId)}&since=${nativeTerminalCursor}`);
+    const data = await response.json();
+    if (sessionId !== nativeTerminalSessionId) return;
+    if (response.ok && data.data) {
+      const binary = atob(data.data);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      nativeTerminal.write(bytes);
+    }
+    if (response.ok) nativeTerminalCursor = data.cursor || nativeTerminalCursor;
+    if (response.ok && !data.alive) nativeTerminal.write(`\r\n\x1b[38;5;245m[Codex 已退出，点击“重新启动”可再次打开]\x1b[0m\r\n`);
+  } catch (_) {
+  } finally {
+    nativeTerminalPolling = false;
+    if (sessionId === nativeTerminalSessionId) setTimeout(pollNativeTerminal, 60);
+  }
+}
+
+nativeTerminal.onData((data) => {
+  if (!nativeTerminalSessionId) return;
+  fetch("http://127.0.0.1:4317/terminal/input", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({session_id:nativeTerminalSessionId, data})
+  }).catch(() => {});
+});
+
+let nativeResizeTimer = null;
+new ResizeObserver(() => {
+  clearTimeout(nativeResizeTimer);
+  nativeResizeTimer = setTimeout(() => {
+    const size = nativeTerminalSize();
+    nativeTerminal.resize(size.cols, size.rows);
+    if (nativeTerminalSessionId) fetch("http://127.0.0.1:4317/terminal/resize", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({session_id:nativeTerminalSessionId, ...size})
+    }).catch(() => {});
+  }, 80);
+}).observe(nativeTerminalElement);
+
+root.querySelector(".terminal-restart").onclick = () => startNativeTerminal(true);
 
 function chooseMediaSource(item) {
   const candidates = [];
@@ -593,6 +697,11 @@ function handleCourseChange() {
   needsEnhancement = false;
   courseAudioIndex = null;
   currentCourseMetadata = {};
+  nativeTerminalGeneration += 1;
+  nativeTerminalSessionId = "";
+  nativeTerminalCursor = 0;
+  nativeTerminal.reset();
+  nativeTerminal.write("\x1b[38;5;245m正在切换课程…\x1b[0m\r\n");
   terminalPath.textContent = "正在定位课程目录…";
   terminalPath.title = "";
   stopSegmentPlayback("已切换课程");
@@ -633,6 +742,7 @@ async function identifyCourseCategory() {
       terminalPath.textContent = result.workspace_path || `课程 ${courseId} · 资料目录待生成`;
       terminalPath.title = result.workspace_path || "";
       statusText.textContent = `已按人工总账归类为 ${result.category}`;
+      startNativeTerminal();
       return;
     }
   } catch (_) {
@@ -950,9 +1060,6 @@ function addApprovalCard(requestId, method, params) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-setInterval(pollCodexEvents, 1000);
-pollCodexEvents();
-
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "TOGGLE_PANEL") setWorkspaceOpen(panel.classList.contains("closed"));
 });
@@ -960,4 +1067,3 @@ chrome.runtime.onMessage.addListener((message) => {
 resetAgentView();
 identifyCourseCategory().finally(loadTranscript);
 refreshCourseStatus();
-loadAgentModels();

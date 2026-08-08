@@ -30,6 +30,7 @@ except ImportError:
     whisper = None
 from codex_bridge import bridge as codex_bridge
 from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course
+from terminal_bridge import bridge as terminal_bridge
 
 
 HOST = "127.0.0.1"
@@ -779,6 +780,16 @@ def final_course_category_map() -> dict[int, str]:
     }
 
 
+def course_workspace(course_number: int) -> tuple[Path | None, dict]:
+    board = classification_board_payload()
+    for column in board["columns"]:
+        for course in column["courses"]:
+            if int(course.get("course_id")) == course_number:
+                directory, metadata = find_archived_course(course.get("source_url", ""))
+                return directory, {**course, **metadata, "final_category": column["category"]}
+    return None, {}
+
+
 def deferred_category_rank(category: str | None) -> int:
     """Ordinary courses first, Chat AI courses next, seven-year livestreams last."""
     if category == "相约七年直播":
@@ -1185,9 +1196,38 @@ class Handler(BaseHTTPRequestHandler):
             except (RuntimeError, OSError, TimeoutError) as exc:
                 self._json({"error": str(exc), "runtime": codex_bridge.runtime_info()}, HTTPStatus.SERVICE_UNAVAILABLE)
             return
+        if parsed.path == "/terminal/output":
+            query = parse_qs(parsed.query)
+            try:
+                session = terminal_bridge.get(query.get("session_id", [""])[0])
+                self._json(session.output(int(query.get("since", ["0"])[0])))
+            except (KeyError, ValueError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.NOT_FOUND)
+            return
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
+        if urlparse(self.path).path in {"/terminal/start", "/terminal/input", "/terminal/resize"}:
+            length = int(self.headers.get("Content-Length", "0"))
+            try:
+                payload = json.loads(self.rfile.read(length))
+                if urlparse(self.path).path == "/terminal/start":
+                    course_number = int(payload.get("course_id"))
+                    directory, metadata = course_workspace(course_number)
+                    if not directory:
+                        raise ValueError("当前课程资料目录还不存在，请先生成文字稿")
+                    session = terminal_bridge.start(str(course_number), directory, payload.get("cols", 80), payload.get("rows", 24), bool(payload.get("force")))
+                    self._json({"ok": True, "session_id": session.id, "cwd": str(directory), "title": metadata.get("title") or directory.name})
+                else:
+                    session = terminal_bridge.get(str(payload.get("session_id") or ""))
+                    if urlparse(self.path).path == "/terminal/input":
+                        session.write(str(payload.get("data") or ""))
+                    else:
+                        session.resize(payload.get("cols", 80), payload.get("rows", 24))
+                    self._json({"ok": True})
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError, RuntimeError, OSError) as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
         if urlparse(self.path).path == "/corpus/classification-board":
             length = int(self.headers.get("Content-Length", "0"))
             try:
@@ -1436,5 +1476,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n服务已停止。")
     finally:
+        terminal_bridge.stop()
         codex_bridge.stop()
         server.server_close()

@@ -11,10 +11,14 @@
   ],
   "background": {"service_worker": "service-worker.js"},
   "action": {"default_title": "打开课程学习助手"},
+  "web_accessible_resources": [{
+    "resources": ["vendor/xterm.css"],
+    "matches": ["https://webapp.songy.info/*"]
+  }],
   "content_scripts": [
     {
       "matches": ["https://webapp.songy.info/*"],
-      "js": ["content.js"],
+      "js": ["vendor/xterm.js", "content.js"],
       "run_at": "document_idle"
     }
   ]
