@@ -241,6 +241,8 @@ def classification_board_payload(targets_payload: dict | None = None, review_pay
     for category in review_payload.get("custom_categories", []):
         if category and category not in categories:
             categories.append(category)
+    saved_category_order = [str(value) for value in review_payload.get("category_order", []) if str(value) in categories]
+    categories = saved_category_order + [category for category in categories if category not in saved_category_order]
     assignments = {}
     items_by_id = {}
     for target in targets:
@@ -279,6 +281,15 @@ def update_classification_board(payload: dict) -> dict:
             custom = review_payload.setdefault("custom_categories", [])
             if name not in CATEGORIES and name not in custom:
                 custom.append(name)
+        elif action == "reorder_categories":
+            requested = [str(value).strip() for value in payload.get("categories", []) if str(value).strip()]
+            if len(requested) != len(set(requested)):
+                raise ValueError("类别顺序中存在重复项")
+            current_board = classification_board_payload(targets_payload, review_payload)
+            existing = [column["category"] for column in current_board["columns"]]
+            if set(requested) != set(existing):
+                raise ValueError("类别顺序不完整")
+            review_payload["category_order"] = requested
         elif action in {"move", "edit"}:
             course_number = int(payload.get("course_id"))
             target = next((item for item in targets_payload.get("targets", []) if int(item.get("course_id")) == course_number), None)
