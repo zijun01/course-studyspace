@@ -9,9 +9,9 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
 # Conservative continuous mode: preserve throughput while giving the M3 Pro
 # regular idle windows between sustained local Whisper bursts.
-export COURSE_MEDIA_COOLDOWN_EVERY="5"
-export COURSE_MEDIA_COOLDOWN_SECONDS="20"
-export COURSE_BETWEEN_COURSES_COOLDOWN_SECONDS="30"
+export COURSE_MEDIA_COOLDOWN_EVERY="4"
+export COURSE_MEDIA_COOLDOWN_SECONDS="25"
+export COURSE_BETWEEN_COURSES_COOLDOWN_SECONDS="45"
 
 script_dir="${0:A:h}"
 project_dir="${script_dir:h}"
