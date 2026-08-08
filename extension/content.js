@@ -34,11 +34,13 @@ root.innerHTML = `
     .view { min-width:0; min-height:0; display:flex; flex-direction:column; }
     .view + .view { border-left:1px solid #dedbd2; }
     .column-title { margin:0; padding:12px 18px 10px; border-bottom:1px solid #e9e5dc; font-size:13px; letter-spacing:.04em; color:#6f6a61; }
-    .agent-titlebar { min-height:45px; padding:7px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; border-bottom:1px solid #e9e5dc; }
-    .agent-titlebar .column-title { padding:0; border:0; white-space:nowrap; }
-    .agent-controls { display:flex; min-width:0; gap:6px; }
-    .agent-select { min-width:0; max-width:150px; border:1px solid #d8d3c9; border-radius:8px; padding:6px 7px; background:#fff; color:#4f4b43; font:11px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
-    .agent-effort { max-width:78px; }
+    .agent-titlebar { min-height:54px; padding:8px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid #ececec; background:#fff; }
+    .agent-brand { display:flex; min-width:0; align-items:center; gap:8px; }
+    .agent-context-dot { width:9px; height:9px; flex:0 0 auto; border-radius:50%; background:#10a37f; box-shadow:0 0 0 3px rgba(16,163,127,.1); }
+    .agent-controls { display:flex; min-width:0; align-items:center; gap:6px; }
+    .agent-select { min-width:0; max-width:168px; border:0; border-radius:9px; padding:7px 8px; background:transparent; color:#202123; font:600 14px/1.2 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; cursor:pointer; }
+    .agent-select:hover { background:#f3f3f3; }
+    .agent-effort { max-width:82px; background:#f4f4f4; color:#676767; font-size:11px; font-weight:500; }
     .transcript-count { margin-left:8px; color:#8b857b; font-size:11px; font-weight:500; letter-spacing:0; }
     .transcript { overflow:auto; padding:15px 18px 100px; }
     .empty { margin:46px 18px; padding:22px; text-align:center; color:#858075; border:1px dashed #d5d0c5; border-radius:14px; }
@@ -53,16 +55,22 @@ root.innerHTML = `
     .segment.source-note time { color:#6f675d; font-weight:650; }
     .segment.source-note { cursor:default; }
     .segment.source-note:hover { background:#f4f0e7; }
-    .chat { overflow:auto; flex:1; padding:18px; }
-    .bubble { padding:11px 13px; border-radius:12px; margin-bottom:10px; white-space:pre-wrap; }
-    .bubble.system { background:#eeeae1; color:#5c584f; }
-    .bubble.user { background:#262520; color:white; margin-left:30px; }
-    .composer { border-top:1px solid #e1ddd4; padding:12px; background:#fbfaf7; }
-    textarea { width:100%; min-height:78px; resize:none; border:1px solid #d5d0c5; border-radius:12px; padding:11px; background:white; color:#24231f; font:inherit; outline:none; }
-    textarea:focus { border-color:#8f887a; }
-    .send-row { display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
-    .hint { color:#928c81; font-size:11px; }
-    .send { border:0; border-radius:9px; background:#20201d; color:white; padding:8px 14px; cursor:pointer; }
+    [data-panel="agent"] { position:relative; background:#fff; }
+    .chat { overflow:auto; flex:1; padding:24px 18px 122px; }
+    .bubble { max-width:92%; padding:5px 2px; margin:0 0 20px; white-space:pre-wrap; color:#292929; line-height:1.65; overflow-wrap:anywhere; }
+    .bubble.system { margin-right:auto; }
+    .bubble.user { width:max-content; max-width:86%; margin-left:auto; padding:10px 14px; border-radius:18px; background:#f3f3f3; color:#292929; }
+    .bubble.welcome { max-width:100%; padding:12px 14px; border:1px solid #ececec; border-radius:14px; color:#666; font-size:12px; background:#fafafa; }
+    .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 14px 12px; background:linear-gradient(to bottom,rgba(255,255,255,0),#fff 20%); }
+    .composer-shell { border:1px solid #dedede; border-radius:24px; padding:9px 10px 8px 14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+    .composer-shell:focus-within { border-color:#c7c7c7; box-shadow:0 3px 16px rgba(0,0,0,.11); }
+    textarea { width:100%; min-height:44px; max-height:150px; resize:none; border:0; padding:4px 2px 7px; background:transparent; color:#292929; font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; outline:none; }
+    .send-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .context-pill { display:inline-flex; align-items:center; gap:5px; color:#676767; font-size:11px; }
+    .context-pill::before { content:""; width:7px; height:7px; border-radius:50%; background:#10a37f; }
+    .hint { display:block; margin-top:6px; text-align:center; color:#999; font-size:10px; }
+    .send { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:50%; background:#111; color:white; padding:0; font-size:18px; line-height:1; cursor:pointer; }
+    .send:disabled { background:#d7d7d7; cursor:default; }
     .selection { color:#75523b; font-size:12px; margin-bottom:7px; max-height:42px; overflow:hidden; }
   </style>
   <aside class="panel">
@@ -74,9 +82,9 @@ root.innerHTML = `
     <div class="workspace">
       <section class="view" data-panel="transcript"><h2 class="column-title">课程文字稿 <small class="transcript-count"></small></h2><div class="transcript"><div class="empty">直接读取本节课已有的音频资源<br>无需播放，点击上方按钮即可</div></div></section>
       <section class="view" data-panel="agent">
-        <div class="agent-titlebar"><h2 class="column-title">课程 Agent</h2><div class="agent-controls"><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div></div>
-        <div class="chat"><div class="bubble system">右侧连接到 <span data-category-label>AI课</span> 的本机 Codex 工作区。它可以读取课程、修改工作区文件、运行工具；需要额外权限时会在这里请求你的批准。</div></div>
-        <div class="composer"><div class="selection"></div><textarea placeholder="问课程内容，也可以随手问任何相关问题…"></textarea><div class="send-row"><span class="hint">已携带当前课程上下文 · 可自由提问</span><button class="send">发送</button></div></div>
+        <div class="agent-titlebar"><div class="agent-brand"><span class="agent-context-dot" title="已连接课程上下文"></span><select class="agent-select agent-model" title="选择模型"><option value="">读取模型…</option></select></div><div class="agent-controls"><select class="agent-select agent-effort" title="思考强度"><option value="">默认</option></select></div></div>
+        <div class="chat"><div class="bubble system welcome">课程 Agent 已连接 <span data-category-label>AI课</span> 工作区，并携带当前课程上下文。你可以追问课程、补充背景知识，或让它直接执行任务。</div></div>
+        <div class="composer"><div class="selection"></div><div class="composer-shell"><textarea placeholder="给课程 Agent 发消息"></textarea><div class="send-row"><span class="context-pill">当前课程</span><button class="send" title="发送">↑</button></div></div><span class="hint">Enter 发送 · Shift + Enter 换行</span></div>
       </section>
     </div>
   </aside>`;
@@ -701,10 +709,10 @@ function resetAgentView() {
   textarea.value = "";
   streamingBubble = null;
   codexEventCursor = Date.now() / 1000;
-  chat.innerHTML = `<div class="bubble system">已携带当前课程上下文，并连接到 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 的 Codex 工作区。你既可以追问老师讲的内容，也可以询问相关背景知识，或让 Agent 执行任务。</div>`;
+  chat.innerHTML = `<div class="bubble system welcome">已连接 <span data-category-label>${escapeHtml(categorySelect.value)}</span> 工作区，并携带当前课程上下文。你可以追问课程、补充背景知识，或让 Agent 直接执行任务。</div>`;
   const sendButton = root.querySelector(".send");
   sendButton.disabled = false;
-  sendButton.textContent = "发送";
+  sendButton.textContent = "↑";
 }
 
 function handleCourseChange() {
@@ -939,7 +947,7 @@ async function sendAgentMessage() {
   const sendButton = root.querySelector(".send");
   agentSending = true;
   sendButton.disabled = true;
-  sendButton.textContent = "正在连接…";
+  sendButton.textContent = "…";
   try {
     const response = await fetch("http://127.0.0.1:4317/codex/message", {
       method: "POST",
@@ -952,15 +960,13 @@ async function sendAgentMessage() {
       addBubble("system", data.direct_answer);
       agentSending = false;
       sendButton.disabled = false;
-      sendButton.textContent = "发送";
-    } else {
-      sendButton.textContent = "正在生成…";
+      sendButton.textContent = "↑";
     }
   } catch (error) {
     addBubble("system", `Codex 连接失败：${error.message}`);
     agentSending = false;
     sendButton.disabled = false;
-    sendButton.textContent = "发送";
+    sendButton.textContent = "↑";
   }
   textarea.value = "";
   selectedText = "";
@@ -1011,7 +1017,7 @@ function handleCodexEvent(event) {
     agentSending = false;
     const sendButton = root.querySelector(".send");
     sendButton.disabled = false;
-    sendButton.textContent = "发送";
+    sendButton.textContent = "↑";
   } else if (method === "error") {
     const message = params.error?.message || params.message || "Codex 连接发生错误";
     if (!params.willRetry) {
@@ -1019,7 +1025,7 @@ function handleCodexEvent(event) {
       agentSending = false;
       const sendButton = root.querySelector(".send");
       sendButton.disabled = false;
-      sendButton.textContent = "发送";
+      sendButton.textContent = "↑";
     }
   } else if (method.includes("requestApproval") && event.id != null) {
     addApprovalCard(String(event.id), method, params);
