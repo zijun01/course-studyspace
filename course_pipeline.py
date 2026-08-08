@@ -93,25 +93,50 @@ def clean_fallback(text: str) -> str:
     return text if re.search(r"[。！？；]$", text) else text + "。"
 
 
+def split_long_audio_rows(rows: list[dict], maximum_characters: int = 4000) -> list[list[dict]]:
+    """Split one long media item on ASR-row boundaries without changing timestamps."""
+    total = audio_character_count(rows)
+    if total <= maximum_characters:
+        return [rows]
+    chunk_count = max(2, (total + maximum_characters - 1) // maximum_characters)
+    target = (total + chunk_count - 1) // chunk_count
+    chunks: list[list[dict]] = []
+    current: list[dict] = []
+    current_characters = 0
+    for row in rows:
+        current.append(row)
+        current_characters += audio_character_count([row])
+        remaining_rows = len(rows) - sum(len(chunk) for chunk in chunks) - len(current)
+        if current_characters >= target and len(chunks) + 1 < chunk_count and remaining_rows > 0:
+            chunks.append(current)
+            current = []
+            current_characters = 0
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def audio_groups(raw_rows: list[dict]) -> list[dict]:
     grouped: dict[tuple, list[dict]] = defaultdict(list)
     for row in raw_rows:
         if row.get("source_type") == "audio_transcript":
             grouped[(row.get("content_id"), row.get("order"))].append(row)
     output = []
-    for index, ((content_id, order), rows) in enumerate(grouped.items()):
+    for content_id, order in grouped:
+        rows = grouped[(content_id, order)]
         rows.sort(key=lambda row: (float(row["start"]), float(row["end"])))
-        output.append({
-            "group_id": str(index),
-            "content_id": content_id,
-            "order": order,
-            "start": min(float(row["start"]) for row in rows),
-            "end": max(float(row["end"]) for row in rows),
-            "raw_text": join_text([row["text"] for row in rows]),
-            "source_url": rows[0].get("source_url"),
-            "course_id": rows[0].get("course_id"),
-            "rows": rows,
-        })
+        for chunk in split_long_audio_rows(rows):
+            output.append({
+                "group_id": str(len(output)),
+                "content_id": content_id,
+                "order": order,
+                "start": min(float(row["start"]) for row in chunk),
+                "end": max(float(row["end"]) for row in chunk),
+                "raw_text": join_text([row["text"] for row in chunk]),
+                "source_url": chunk[0].get("source_url"),
+                "course_id": chunk[0].get("course_id"),
+                "rows": chunk,
+            })
     return output
 
 
@@ -386,19 +411,13 @@ def aligned_sentence_times(group: dict, parts: list[str]) -> list[tuple[float, f
 
 def build_reading(raw_rows: list[dict], polished: dict[str, str] | None) -> tuple[list[dict], str]:
     groups = audio_groups(raw_rows)
-    group_by_content = {(group["content_id"], group["order"]): group for group in groups}
-    reading = []
-    emitted = set()
+    reading = [
+        {**row, "layer": "reading", "raw_text": row["text"], "transform": "source_page_exact", "time_inferred": False}
+        for row in raw_rows
+        if row.get("source_type") == "page_text"
+    ]
     enhancement = "codex" if polished is not None else "fallback"
-    for row in raw_rows:
-        if row.get("source_type") == "page_text":
-            reading.append({**row, "layer": "reading", "raw_text": row["text"], "transform": "source_page_exact", "time_inferred": False})
-            continue
-        key = (row.get("content_id"), row.get("order"))
-        if key in emitted:
-            continue
-        emitted.add(key)
-        group = group_by_content[key]
+    for group in groups:
         text = polished[group["group_id"]] if polished is not None else clean_fallback(group["raw_text"])
         parts = semantic_sentences(text)
         timings = aligned_sentence_times(group, parts)
@@ -505,7 +524,7 @@ def archive_and_enhance(payload: dict, raw_rows: list[dict], cache_path: Path, s
     enhancement_started = time.monotonic()
     groups = audio_groups(raw_rows)
     audio_characters = audio_character_count(raw_rows)
-    use_parallel = audio_characters >= 4000 and len(groups) >= 12
+    use_parallel = audio_characters >= 4000 and len(groups) >= 2
     pipeline_name = "whole-course-brief-plus-3-parallel-chunks-v1" if use_parallel else "short-course-single-pass-v1"
     try:
         if use_parallel:
