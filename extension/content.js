@@ -32,7 +32,7 @@ root.innerHTML = `
     .view { min-width:0; min-height:0; display:flex; flex-direction:column; }
     .view + .view { border-left:1px solid #dedbd2; }
     .column-title { margin:0; padding:12px 18px 10px; border-bottom:1px solid #e9e5dc; font-size:13px; letter-spacing:.04em; color:#6f6a61; }
-    .agent-titlebar { min-height:54px; padding:8px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid #ececec; background:#fff; }
+    .agent-titlebar { min-height:54px; padding:8px 14px; display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid #e9e5dc; background:#fbfaf7; }
     .agent-brand { display:flex; min-width:0; align-items:center; gap:8px; }
     .agent-context-dot { width:9px; height:9px; flex:0 0 auto; border-radius:50%; background:#10a37f; box-shadow:0 0 0 3px rgba(16,163,127,.1); }
     .agent-controls { display:flex; min-width:0; align-items:center; gap:6px; }
@@ -53,14 +53,14 @@ root.innerHTML = `
     .segment.source-note time { color:#6f675d; font-weight:650; }
     .segment.source-note { cursor:default; }
     .segment.source-note:hover { background:#f4f0e7; }
-    [data-panel="agent"] { position:relative; background:#fff; }
+    [data-panel="agent"] { position:relative; background:#fbfaf7; }
     .chat { overflow:auto; flex:1; padding:24px 18px 122px; }
     .bubble { max-width:92%; padding:5px 2px; margin:0 0 20px; white-space:pre-wrap; color:#292929; line-height:1.65; overflow-wrap:anywhere; }
     .bubble.system { margin-right:auto; }
-    .bubble.user { width:max-content; max-width:86%; margin-left:auto; padding:10px 14px; border-radius:18px; background:#f3f3f3; color:#292929; }
-    .bubble.welcome { max-width:100%; padding:12px 14px; border:1px solid #ececec; border-radius:14px; color:#666; font-size:12px; background:#fafafa; }
-    .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 14px 12px; background:linear-gradient(to bottom,rgba(255,255,255,0),#fff 20%); }
-    .composer-shell { border:1px solid #dedede; border-radius:24px; padding:9px 10px 8px 14px; background:#fff; box-shadow:0 2px 12px rgba(0,0,0,.08); }
+    .bubble.user { width:max-content; max-width:86%; margin-left:auto; padding:10px 14px; border-radius:18px; background:#eeeae1; color:#292929; }
+    .bubble.welcome { max-width:100%; padding:12px 14px; border:1px solid #e1ddd4; border-radius:14px; color:#666; font-size:12px; background:#f4f0e7; }
+    .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 14px 12px; background:linear-gradient(to bottom,rgba(251,250,247,0),#fbfaf7 20%); }
+    .composer-shell { border:1px solid #d5d0c5; border-radius:24px; padding:9px 10px 8px 14px; background:#fff; box-shadow:0 2px 12px rgba(42,38,30,.08); }
     .composer-shell:focus-within { border-color:#c7c7c7; box-shadow:0 3px 16px rgba(0,0,0,.11); }
     textarea { width:100%; min-height:44px; max-height:150px; resize:none; border:0; padding:4px 2px 7px; background:transparent; color:#292929; font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; outline:none; }
     .send-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
