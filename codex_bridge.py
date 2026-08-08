@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
+import socket
 import subprocess
 import threading
 import time
+import tomllib
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -22,11 +25,14 @@ class CodexBridge:
         self.process = None
         self._next_id = 1
         self._write_lock = threading.Lock()
+        self._start_lock = threading.RLock()
+        self._thread_lock = threading.Lock()
         self._pending = {}
         self._events = defaultdict(lambda: deque(maxlen=2000))
         self._approval_requests = {}
         self._threads = self._load_threads()
         self._thread_categories = {thread_id: category for category, thread_id in self._threads.items()}
+        self._active_threads = set()
 
     def _load_threads(self):
         try:
@@ -38,32 +44,43 @@ class CodexBridge:
         THREADS_FILE.write_text(json.dumps(self._threads, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     def start(self):
-        if self.process and self.process.poll() is None:
-            return
-        child_env = os.environ.copy()
-        for key in ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy"):
-            child_env.pop(key, None)
-        self.process = subprocess.Popen(
-            ["codex", "app-server", "--stdio"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=ROOT,
-            env=child_env,
-        )
-        threading.Thread(target=self._read_stdout, daemon=True).start()
-        threading.Thread(target=self._read_stderr, daemon=True).start()
-        self.request("initialize", {"clientInfo": {"name": "course-studyspace", "title": "课程学习助手", "version": "0.1.0"}}, timeout=15)
-        self.notify("initialized", {})
+        with self._start_lock:
+            if self.process and self.process.poll() is None:
+                return
+            child_env = os.environ.copy()
+            # launchd 中可能残留旧代理；优先使用本机当前可连接的 Clash 端口。
+            try:
+                with socket.create_connection(("127.0.0.1", 7890), timeout=0.15):
+                    proxy = "http://127.0.0.1:7890"
+                for key in ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy"):
+                    child_env[key] = proxy
+            except OSError:
+                for key in ("ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY", "all_proxy", "https_proxy", "http_proxy"):
+                    if "127.0.0.1:7897" in child_env.get(key, ""):
+                        child_env.pop(key, None)
+            self._active_threads.clear()
+            self.process = subprocess.Popen(
+                ["codex", "app-server", "--stdio"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                cwd=ROOT,
+                env=child_env,
+            )
+            threading.Thread(target=self._read_stdout, daemon=True).start()
+            threading.Thread(target=self._read_stderr, daemon=True).start()
+            self.request("initialize", {"clientInfo": {"name": "course-studyspace", "title": "课程学习助手", "version": "0.1.0"}}, timeout=15)
+            self.notify("initialized", {})
 
     def stop(self):
         if self.process and self.process.poll() is None:
             self.process.terminate()
 
     def _send(self, payload):
-        self.start() if self.process is None else None
+        if self.process is None or self.process.poll() is not None:
+            self.start()
         line = json.dumps(payload, ensure_ascii=False)
         with self._write_lock:
             self.process.stdin.write(line + "\n")
@@ -116,30 +133,58 @@ class CodexBridge:
         if not category_dir.is_dir() or category_dir.parent != LIBRARY.resolve():
             raise ValueError("未知课程类别")
         self.start()
-        existing = self._threads.get(category)
-        if existing:
-            try:
-                result = self.request("thread/resume", {
-                    "threadId": existing,
-                    "cwd": str(category_dir),
-                    "sandbox": "workspace-write",
-                    "approvalPolicy": "on-request",
-                }, timeout=30)
-                self._thread_categories[existing] = category
-                return result
-            except RuntimeError:
-                pass
-        result = self.request("thread/start", {
-            "cwd": str(category_dir),
-            "sandbox": "workspace-write",
-            "approvalPolicy": "on-request",
-            "ephemeral": False,
-        }, timeout=30)
-        thread_id = result["thread"]["id"]
-        self._threads[category] = thread_id
-        self._thread_categories[thread_id] = category
-        self._save_threads()
-        return result
+        with self._thread_lock:
+            existing = self._threads.get(category)
+            if existing in self._active_threads:
+                return {"thread": {"id": existing}}
+            if existing:
+                try:
+                    result = self.request("thread/resume", {
+                        "threadId": existing,
+                        "cwd": str(category_dir),
+                        "sandbox": "workspace-write",
+                        "approvalPolicy": "on-request",
+                    }, timeout=30)
+                    self._thread_categories[existing] = category
+                    self._active_threads.add(existing)
+                    return result
+                except RuntimeError:
+                    pass
+            result = self.request("thread/start", {
+                "cwd": str(category_dir),
+                "sandbox": "workspace-write",
+                "approvalPolicy": "on-request",
+                "ephemeral": False,
+            }, timeout=30)
+            thread_id = result["thread"]["id"]
+            self._threads[category] = thread_id
+            self._thread_categories[thread_id] = category
+            self._active_threads.add(thread_id)
+            self._save_threads()
+            return result
+
+    def runtime_info(self):
+        config_path = Path.home() / ".codex" / "config.toml"
+        try:
+            config = tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            config = {}
+        return {
+            "model": str(config.get("model") or "未在配置中指定"),
+            "reasoning_effort": str(config.get("model_reasoning_effort") or "默认"),
+            "transport": "本机 Codex app-server",
+        }
+
+    def direct_answer(self, text: str):
+        compact = re.sub(r"\s+", "", text).lower()
+        if re.search(r"(你|当前|agent)?.{0,5}(什么|哪个|哪一个).{0,4}(模型|model)|你是.{0,8}(模型|gpt)", compact):
+            info = self.runtime_info()
+            return (
+                f"当前课程 Agent 通过 {info['transport']} 运行；实际配置模型是 "
+                f"{info['model']}，推理强度是 {info['reasoning_effort']}。"
+                "这是从本机配置读取的，不采用模型自己的身份自述。"
+            )
+        return None
 
     def send_message(self, category: str, text: str, course_id: int | None = None, selection: str = ""):
         result = self.ensure_thread(category)

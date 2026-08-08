@@ -906,6 +906,10 @@ class Handler(BaseHTTPRequestHandler):
                 text = str(payload.get("text", "")).strip()
                 if not text:
                     raise ValueError("问题不能为空")
+                direct_answer = codex_bridge.direct_answer(text)
+                if direct_answer:
+                    self._json({"ok": True, "direct_answer": direct_answer, "runtime": codex_bridge.runtime_info()})
+                    return
                 result = codex_bridge.send_message(
                     category=category,
                     text=text,

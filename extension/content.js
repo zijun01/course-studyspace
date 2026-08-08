@@ -646,6 +646,7 @@ transcript.addEventListener("click", async (event) => {
 });
 
 function resetAgentView() {
+  agentSending = false;
   selectedText = "";
   selectionLabel.textContent = "";
   textarea.value = "";
@@ -880,13 +881,16 @@ document.addEventListener("mouseup", () => {
   textarea.focus();
 });
 
-root.querySelector(".send").onclick = async () => {
+let agentSending = false;
+async function sendAgentMessage() {
+  if (agentSending) return;
   const question = textarea.value.trim();
   if (!question && !selectedText) return;
   addBubble("user", [selectedText ? `引用：${selectedText}` : "", question].filter(Boolean).join("\n\n"));
   const sendButton = root.querySelector(".send");
+  agentSending = true;
   sendButton.disabled = true;
-  sendButton.textContent = "Codex 处理中";
+  sendButton.textContent = "正在连接…";
   try {
     const response = await fetch("http://127.0.0.1:4317/codex/message", {
       method: "POST",
@@ -895,15 +899,31 @@ root.querySelector(".send").onclick = async () => {
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Codex 无法开始任务");
+    if (data.direct_answer) {
+      addBubble("system", data.direct_answer);
+      agentSending = false;
+      sendButton.disabled = false;
+      sendButton.textContent = "发送";
+    } else {
+      sendButton.textContent = "正在生成…";
+    }
   } catch (error) {
     addBubble("system", `Codex 连接失败：${error.message}`);
+    agentSending = false;
     sendButton.disabled = false;
     sendButton.textContent = "发送";
   }
   textarea.value = "";
   selectedText = "";
   selectionLabel.textContent = "";
-};
+}
+
+root.querySelector(".send").onclick = sendAgentMessage;
+textarea.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  sendAgentMessage();
+});
 
 function addBubble(type, text) {
   const bubble = document.createElement("div");
@@ -939,6 +959,7 @@ function handleCodexEvent(event) {
     chat.scrollTop = chat.scrollHeight;
   } else if (method === "turn/completed") {
     streamingBubble = null;
+    agentSending = false;
     const sendButton = root.querySelector(".send");
     sendButton.disabled = false;
     sendButton.textContent = "发送";
@@ -946,6 +967,7 @@ function handleCodexEvent(event) {
     const message = params.error?.message || params.message || "Codex 连接发生错误";
     if (!params.willRetry) {
       addBubble("system", `Codex 未完成：${message}`);
+      agentSending = false;
       const sendButton = root.querySelector(".send");
       sendButton.disabled = false;
       sendButton.textContent = "发送";
