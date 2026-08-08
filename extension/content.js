@@ -60,7 +60,7 @@ root.innerHTML = `
     .bubble.user { width:max-content; max-width:86%; margin-left:auto; padding:10px 14px; border-radius:18px; background:#eeeae1; color:#292929; }
     .bubble.welcome { max-width:100%; padding:12px 14px; border:1px solid #e1ddd4; border-radius:14px; color:#666; font-size:12px; background:#f4f0e7; }
     .composer { position:absolute; right:0; bottom:0; width:100%; padding:10px 14px 12px; background:linear-gradient(to bottom,rgba(251,250,247,0),#fbfaf7 20%); }
-    .composer-shell { border:1px solid #d5d0c5; border-radius:24px; padding:9px 10px 8px 14px; background:#fff; box-shadow:0 2px 12px rgba(42,38,30,.08); }
+    .composer-shell { border:1px solid #d5d0c5; border-radius:24px; padding:9px 10px 8px 14px; background:#fbfaf7; box-shadow:0 2px 12px rgba(42,38,30,.08); }
     .composer-shell:focus-within { border-color:#c7c7c7; box-shadow:0 3px 16px rgba(0,0,0,.11); }
     textarea { width:100%; min-height:44px; max-height:150px; resize:none; border:0; padding:4px 2px 7px; background:transparent; color:#292929; font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; outline:none; }
     .send-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
