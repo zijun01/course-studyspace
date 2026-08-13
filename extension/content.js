@@ -789,14 +789,23 @@ window.addEventListener("popstate", handleCourseChange);
 // Flutter/SPA navigation does not always emit hashchange or popstate.
 setInterval(handleCourseChange, 350);
 
+async function ensureLocalServer() {
+  const response = await chrome.runtime.sendMessage({type: "ENSURE_LOCAL_SERVER"});
+  if (!response?.ok) {
+    throw new Error(response?.error || "本机转写服务启动失败，请重新加载课程学习助手扩展");
+  }
+}
+
 recordButton.onclick = async () => {
   if (processing) return;
   processing = true;
   recordButton.disabled = true;
   dot.classList.add("live");
   updateProgress({status: "reading"});
-  statusText.textContent = "正在读取课程内容…";
+  statusText.textContent = "正在启动本机转写服务…";
   try {
+    await ensureLocalServer();
+    statusText.textContent = "正在读取课程内容…";
     const courseId = currentCourseId();
     if (!courseId) throw new Error("当前页面没有课程编号");
     if (!categorySelect.value) throw new Error("请先选择这门课属于哪个课程类别");

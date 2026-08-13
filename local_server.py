@@ -56,6 +56,34 @@ _model = None
 _model_lock = threading.RLock()
 _jobs = {}
 _jobs_lock = threading.Lock()
+IDLE_SHUTDOWN_SECONDS = max(30, int(os.environ.get("COURSE_SERVER_IDLE_SECONDS", "120")))
+_last_activity = time.monotonic()
+_activity_lock = threading.Lock()
+
+
+def touch_activity():
+    global _last_activity
+    with _activity_lock:
+        _last_activity = time.monotonic()
+
+
+def has_active_work() -> bool:
+    with _jobs_lock:
+        if any(job.get("status") not in {"complete", "error"} for job in _jobs.values()):
+            return True
+    paths = queue_paths()
+    return any(paths[name].glob("*.json") for name in ("processing", "enhancing"))
+
+
+def idle_shutdown_monitor(server):
+    while True:
+        time.sleep(10)
+        with _activity_lock:
+            idle_for = time.monotonic() - _last_activity
+        if idle_for >= IDLE_SHUTDOWN_SECONDS and not has_active_work():
+            print(f"已空闲 {int(idle_for)} 秒，自动关闭课程服务并释放模型内存。", flush=True)
+            server.shutdown()
+            return
 
 
 def model():
@@ -1207,6 +1235,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self):
+        touch_activity()
         if urlparse(self.path).path in {"/terminal/start", "/terminal/input", "/terminal/resize"}:
             length = int(self.headers.get("Content-Length", "0"))
             try:
@@ -1469,7 +1498,9 @@ if __name__ == "__main__":
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=bulk_course_worker, daemon=True, name="bulk-course-worker").start()
     threading.Thread(target=bulk_enhancement_worker, daemon=True, name="bulk-enhancement-worker").start()
+    threading.Thread(target=idle_shutdown_monitor, args=(server,), daemon=True, name="idle-shutdown-monitor").start()
     print(f"课程转写服务已启动：http://{HOST}:{PORT}", flush=True)
+    print(f"无任务且空闲 {IDLE_SHUTDOWN_SECONDS} 秒后自动关闭。", flush=True)
     print(f"文字稿目录：{TRANSCRIPT_DIR}", flush=True)
     try:
         server.serve_forever()

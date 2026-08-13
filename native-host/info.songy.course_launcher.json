@@ -1,0 +1,9 @@
+{
+  "name": "info.songy.course_launcher",
+  "description": "按需启动本机课程转写服务",
+  "path": "/Users/yzj/Projects/Courses Studyspace/native-host/course_server_launcher.py",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://lldacicjobejcelhampfpnegcjbjejie/"
+  ]
+}
