@@ -17,6 +17,20 @@ from collections import deque
 from pathlib import Path
 
 
+def build_terminal_environment(inherited=None) -> dict[str, str]:
+    environment = dict(os.environ if inherited is None else inherited)
+    home = Path(environment.get("HOME") or Path.home())
+    environment.update({"TERM": "xterm-256color", "COLORTERM": "truecolor", "CLICOLOR": "1"})
+    path_entries = [
+        str(home / ".npm-global" / "bin"),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        environment.get("PATH", ""),
+    ]
+    environment["PATH"] = os.pathsep.join(entry for entry in path_entries if entry)
+    return environment
+
+
 class TerminalSession:
     def __init__(self, cwd: Path, cols: int = 80, rows: int = 24):
         self.id = uuid.uuid4().hex
@@ -29,8 +43,10 @@ class TerminalSession:
         master, slave = pty.openpty()
         self.master = master
         self.resize(cols, rows)
-        environment = dict(os.environ)
-        environment.update({"TERM": "xterm-256color", "COLORTERM": "truecolor", "CLICOLOR": "1"})
+        environment = build_terminal_environment()
+        # Chrome native-messaging helpers receive a much smaller PATH than an
+        # interactive shell.  Codex is a Node launcher, so preserve its common
+        # user and package-manager locations explicitly.
         codex = shutil.which("codex") or str(Path.home() / ".npm-global/bin/codex")
         self.process = subprocess.Popen(
             [codex, "-C", str(cwd)],
@@ -62,6 +78,7 @@ class TerminalSession:
         with self._lock:
             chunks = [data for sequence, data in self._chunks if sequence > since]
             cursor = self._sequence
+            self.updated_at = time.time()
         return {
             "data": base64.b64encode(b"".join(chunks)).decode("ascii"),
             "cursor": cursor,
@@ -117,6 +134,31 @@ class TerminalBridge:
         if not session:
             raise KeyError("终端会话不存在")
         return session
+
+    def has_active_sessions(self, stale_after: float = 180.0) -> bool:
+        """Keep the helper alive while a browser tab is polling a live terminal."""
+        now = time.time()
+        active = False
+        stale_ids = []
+        with self._lock:
+            for session_id, session in self._sessions.items():
+                if session.process.poll() is not None:
+                    stale_ids.append(session_id)
+                elif now - session.updated_at <= stale_after:
+                    active = True
+                else:
+                    session.close()
+                    stale_ids.append(session_id)
+            for session_id in stale_ids:
+                self._sessions.pop(session_id, None)
+            if stale_ids:
+                live_ids = set(self._sessions)
+                self._course_sessions = {
+                    course_key: session_id
+                    for course_key, session_id in self._course_sessions.items()
+                    if session_id in live_ids
+                }
+        return active
 
     def stop(self):
         for session in list(self._sessions.values()):

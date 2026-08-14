@@ -26,6 +26,23 @@ CATEGORIES = (
 )
 
 
+def normalize_course_category(category: str | None) -> str:
+    """Translate labels used before the reviewed AI-course split."""
+    value = str(category or "").strip()
+    return "AI课-Agent版" if value == "AI课" else value
+
+
+def validate_transcription_payload(payload: dict) -> dict:
+    """Return a normalized copy safe to enqueue for whole-course processing."""
+    normalized = dict(payload)
+    normalized["course_category"] = normalize_course_category(normalized.get("course_category", "AI课"))
+    if not normalized.get("course_url") or not isinstance(normalized.get("items"), list):
+        raise ValueError("缺少课程地址或内容")
+    if normalized["course_category"] not in CATEGORIES:
+        raise ValueError("未知课程类别")
+    return normalized
+
+
 def safe_name(value: str, limit: int = 72) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value, flags=re.UNICODE).strip("-")
     return (cleaned or "course")[:limit]
@@ -276,6 +293,21 @@ def balanced_semantic_chunks(groups: list[dict], count: int = 3) -> list[list[di
     return chunks
 
 
+def retry_codex_step(operation, attempts: int = 2, on_retry=None):
+    """Retry only the failed semantic step; successful parallel steps keep running."""
+    last_error = None
+    for attempt in range(1, max(1, attempts) + 1):
+        try:
+            return operation()
+        except Exception as exc:
+            last_error = exc
+            if attempt >= attempts:
+                raise
+            if on_retry:
+                on_retry(attempt, exc)
+    raise last_error
+
+
 def enhance_parallel_with_codex(groups: list[dict], course_title: str, progress=None) -> dict[str, str]:
     """Understand the whole course once, then polish three contiguous chunks in parallel."""
     if not groups:
@@ -294,7 +326,13 @@ def enhance_parallel_with_codex(groups: list[dict], course_title: str, progress=
     def brief_tick(elapsed, limit):
         if progress:
             progress(min(0.18, 0.18 * elapsed / limit), f"阶段 1/3 · 全课理解已等待 {int(elapsed)//60}:{int(elapsed)%60:02d}", elapsed, limit)
-    brief = parsed_json(codex_output(brief_task, brief_timeout, brief_tick), "{", "}")
+    brief = retry_codex_step(
+        lambda: parsed_json(codex_output(brief_task, brief_timeout, brief_tick), "{", "}"),
+        attempts=2,
+        on_retry=lambda attempt, exc: progress(
+            0.01, f"阶段 1/3 · 全课理解首次失败，正在自动重试：{exc}", 0, brief_timeout
+        ) if progress else None,
+    )
     chunks = balanced_semantic_chunks(groups, 3)
     rules = PROMPT.read_text(encoding="utf-8")
     if progress:
@@ -324,7 +362,15 @@ def enhance_parallel_with_codex(groups: list[dict], course_title: str, progress=
             if progress:
                 with progress_lock:
                     progress(0.2 + 0.7 * completed / len(chunks), f"阶段 2/3 · 已完成 {completed}/{len(chunks)} · 第 {index + 1} 块已等待 {int(elapsed)//60}:{int(elapsed)%60:02d}", elapsed, limit)
-        rows = parsed_json(codex_output(task, timeout, chunk_tick), "[", "]")
+        rows = retry_codex_step(
+            lambda: parsed_json(codex_output(task, timeout, chunk_tick), "[", "]"),
+            attempts=2,
+            on_retry=lambda attempt, exc: progress(
+                0.2 + 0.7 * completed / len(chunks),
+                f"阶段 2/3 · 第 {index + 1} 块首次失败，正在自动重试：{exc}",
+                0, timeout,
+            ) if progress else None,
+        )
         mapping = {str(row["group_id"]): str(row["text"]).strip() for row in rows}
         expected = {group["group_id"] for group in chunk}
         if set(mapping) != expected or any(not mapping[key] for key in expected):

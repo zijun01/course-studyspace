@@ -29,8 +29,9 @@ try:
 except ImportError:
     whisper = None
 from codex_bridge import bridge as codex_bridge
-from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course
+from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course, validate_transcription_payload
 from terminal_bridge import bridge as terminal_bridge
+from runtime_resources import release_accelerator_cache
 
 
 HOST = "127.0.0.1"
@@ -68,6 +69,8 @@ def touch_activity():
 
 
 def has_active_work() -> bool:
+    if terminal_bridge.has_active_sessions():
+        return True
     with _jobs_lock:
         if any(job.get("status") not in {"complete", "error"} for job in _jobs.values()):
             return True
@@ -96,6 +99,14 @@ def model():
             _model = whisper.load_model("turbo")
             print("Whisper 已就绪。", flush=True)
     return _model
+
+
+def release_transcription_memory():
+    """Drop Whisper references and Metal caches without stopping the terminal."""
+    global _model
+    with _model_lock:
+        _model = None
+        release_accelerator_cache()
 
 
 def transcribe_audio(path: Path, progress=None) -> tuple[dict, str]:
@@ -717,6 +728,8 @@ def run_course_job(job_id: str, payload: dict, enhance_after: bool = True):
     except Exception as exc:
         print(f"整课转写失败：{exc}", flush=True)
         set_job(job_id, status="error", message=str(exc))
+    finally:
+        release_transcription_memory()
 
 
 def run_enhancement_job(job_id: str, payload: dict, cache_path: Path):
@@ -1395,11 +1408,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "invalid course payload"}, HTTPStatus.BAD_REQUEST)
                 return
             try:
-                payload = json.loads(self.rfile.read(length))
-                if not payload.get("course_url") or not isinstance(payload.get("items"), list):
-                    raise ValueError("missing course_url or items")
-                if payload.get("course_category", "AI课") not in CATEGORIES:
-                    raise ValueError("未知课程类别")
+                payload = validate_transcription_payload(json.loads(self.rfile.read(length)))
                 existing_files = list(TRANSCRIPT_DIR.glob(f"*-{course_id(payload['course_url'])}.jsonl")) if TRANSCRIPT_DIR.exists() else []
                 completed_file = next((path for path in existing_files if jsonl_has_records(path)), None)
                 if completed_file and not payload.get("force", False):
