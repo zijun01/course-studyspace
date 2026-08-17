@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "课程学习助手",
-  "version": "0.8.0",
+  "version": "0.4.0",
   "description": "直接读取已购买课程的音频资源，在本机转写、划选和检索。",
   "permissions": ["activeTab", "storage", "nativeMessaging"],
   "host_permissions": [
     "http://127.0.0.1:4317/*",
-    "https://webapp.songy.info/*",
     "https://bandu-api.songy.info/*",
     "https://bandu-resources.songy.info/*"
   ],
@@ -19,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["https://webapp.songy.info/*"],
-      "js": ["vendor/xterm.js", "playback.js", "content.js"],
+      "js": ["vendor/xterm.js", "content.js"],
       "run_at": "document_idle"
     }
   ]

@@ -4,12 +4,6 @@ host.style.cssText = "position:fixed;inset:0 0 0 auto;z-index:2147483647;pointer
 document.documentElement.appendChild(host);
 const root = host.attachShadow({mode: "open"});
 
-// Keep the DNR result visible in the page DOM so the real installed extension
-// can be diagnosed without opening or guessing from the service-worker console.
-chrome.runtime.sendMessage({type: "DNR_DEBUG"})
-  .then((result) => { host.dataset.dnrDebug = JSON.stringify(result); })
-  .catch((error) => { host.dataset.dnrDebug = JSON.stringify({ok: false, error: error.message}); });
-
 root.innerHTML = `
   <style>
     :host { all: initial; }
@@ -86,18 +80,7 @@ root.innerHTML = `
     .native-terminal .xterm { height:100%; }
     .native-terminal .xterm-viewport { scrollbar-color:#555 #18181c; }
     .terminal-restart { border:1px solid #d5d0c5; border-radius:6px; padding:4px 8px; background:#f4f0e7; color:#6f6a61; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; cursor:pointer; }
-    .course-player { pointer-events:auto; position:fixed; z-index:2; left:0; bottom:0; width:45vw; padding:9px 12px 10px; border-top:1px solid #d8d3c9; background:rgba(251,250,247,.97); box-shadow:0 -8px 24px rgba(42,38,30,.12); color:#4f4b43; transition:transform .22s ease; }
-    .course-player.closed { transform:translateY(110%); }
-    .course-player-title { overflow:hidden; margin-bottom:6px; text-overflow:ellipsis; white-space:nowrap; font:12px/1.3 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif; }
-    .course-player audio { display:block; width:100%; height:34px; }
-    .course-player video { display:block; width:100%; max-height:38vh; background:#111; }
-    .course-player [hidden] { display:none!important; }
   </style>
-  <section class="course-player" aria-label="课程统一播放器">
-    <div class="course-player-title">点击右侧文字稿即可播放对应位置</div>
-    <audio controls preload="metadata"></audio>
-    <video controls playsinline preload="metadata" hidden></video>
-  </section>
   <aside class="panel">
     <header>
       <div class="top"><h1>课程学习助手</h1><button class="close" title="关闭">×</button></div>
@@ -119,10 +102,6 @@ terminalStyles.href = chrome.runtime.getURL("vendor/xterm.css");
 root.prepend(terminalStyles);
 
 const panel = root.querySelector(".panel");
-const coursePlayerShell = root.querySelector(".course-player");
-const coursePlayerTitle = root.querySelector(".course-player-title");
-const courseAudioPlayer = root.querySelector(".course-player audio");
-const courseVideoPlayer = root.querySelector(".course-player video");
 const recordButton = root.querySelector(".record");
 const dot = root.querySelector(".dot");
 const statusText = root.querySelector(".status");
@@ -168,7 +147,7 @@ let playbackStopTimer = null;
 let playbackEndHandler = null;
 let playingLocalEnd = null;
 let playingGlobalEnd = null;
-let activeCourseSource = null;
+let studyAudio = null;
 let observedCourseId = "";
 let currentCourseMetadata = {};
 const ledgerClassifiedCourseIds = new Set();
@@ -261,7 +240,6 @@ const originalBodyTransform = document.body.style.transform;
 const originalBodyTransformOrigin = document.body.style.transformOrigin;
 function setWorkspaceOpen(open) {
   panel.classList.toggle("closed", !open);
-  coursePlayerShell.classList.toggle("closed", !open);
   document.body.style.width = open ? "100vw" : originalBodyWidth;
   document.body.style.height = open ? "100vh" : originalBodyHeight;
   document.body.style.overflowX = open ? "hidden" : originalBodyOverflowX;
@@ -566,7 +544,6 @@ async function loadCourseAudioIndex() {
     const duration = Number(item.duration || item.attachment?.duration || 0) / 1000;
     const url = item.attachment?.raw_url || item.attachment?.url || "";
     courseAudioIndex.push({
-      mediaIndex: courseAudioIndex.length,
       contentId: Number(item.id),
       mediaType: item.category,
       url,
@@ -581,194 +558,13 @@ async function loadCourseAudioIndex() {
 function clearPlaybackStopControls() {
   if (playbackStopTimer) clearTimeout(playbackStopTimer);
   playbackStopTimer = null;
+  if (playingAudio && playbackEndHandler) playingAudio.removeEventListener("timeupdate", playbackEndHandler);
   playbackEndHandler = null;
 }
 
-let pageMediaRequestSequence = 0;
-function sendPageMediaCommand(command, timeoutMs = 5000) {
-  return new Promise((resolve, reject) => {
-    const requestId = `course-media-${Date.now()}-${++pageMediaRequestSequence}`;
-    const timeout = setTimeout(() => {
-      window.removeEventListener("message", receive);
-      reject(new Error("左侧课程播放器没有响应"));
-    }, timeoutMs);
-    function receive(event) {
-      const message = event.data;
-      if (event.source !== window || message?.source !== "course-studyspace-page" || message?.type !== "media-result" || message.requestId !== requestId) return;
-      clearTimeout(timeout);
-      window.removeEventListener("message", receive);
-      if (message.ok) resolve(message);
-      else reject(new Error(message.error || "左侧课程播放器无法播放"));
-    }
-    window.addEventListener("message", receive);
-    window.postMessage({source: "course-studyspace-content", type: "media-command", requestId, ...command}, "*");
-  });
-}
-
-async function pageMediaCommand(command, timeoutMs = 5000) {
-  const prepared = await sendPageMediaCommand(command, timeoutMs);
-  if (prepared.nativeClick) {
-    const clicked = await chrome.runtime.sendMessage({
-      type: "CLICK_PLAYER_CONTROL", x: prepared.nativeClick.x, y: prepared.nativeClick.y,
-    });
-    if (!clicked?.ok) throw new Error(clicked?.error || "无法控制左侧课程播放器");
-    await new Promise((done) => setTimeout(done, 350));
-  }
-  if (command.action !== "play" && command.action !== "pause") return prepared;
-  const actual = await sendPageMediaCommand({action: "status"}, timeoutMs);
-  const expectedPaused = command.action === "pause";
-  if (actual.paused !== expectedPaused) {
-    throw new Error(expectedPaused ? "左侧播放器没有暂停" : "左侧播放器没有开始播放");
-  }
-  return actual;
-}
-
-function mediaFileName(url) {
-  try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || ""); }
-  catch (_) { return ""; }
-}
-
-function sameMediaUrl(left, right) {
-  const leftName = mediaFileName(left);
-  const rightName = mediaFileName(right);
-  return Boolean(left && right && (left === right || (leftName && leftName === rightName)));
-}
-
-async function highlightTranscriptAtMediaProgress(message) {
-  if (!segments.length || !message.currentUrl) return;
-  let index;
-  try { index = await loadCourseAudioIndex(); }
-  catch (_) { return; }
-  const source = index.find((item) => sameMediaUrl(item.url, message.currentUrl));
-  if (!source) return;
-  const globalTime = source.start + Math.max(0, Number(message.currentTime) || 0);
-  let segmentIndex = -1;
-  for (let position = 0; position < segments.length; position += 1) {
-    const item = segments[position];
-    if (item.source_text || Number(item.start) > globalTime) continue;
-    const end = Number(item.end);
-    if (end > globalTime || end <= Number(item.start) + 0.05) segmentIndex = position;
-  }
-  if (segmentIndex < 0) return;
-  const element = transcript.querySelector(`.segment[data-index="${segmentIndex}"]`);
-  if (!element) return;
-  transcript.querySelectorAll(".segment.playing,.segment.paused").forEach((item) => {
-    if (item !== element) item.classList.remove("playing", "paused");
-  });
-  element.classList.toggle("playing", !message.paused && !message.ended);
-  element.classList.toggle("paused", Boolean(message.paused) && !message.ended);
-  playingSegment = element;
-  if (playingAudio) playingAudio.currentTime = Number(message.currentTime) || 0;
-  element.scrollIntoView({block: "nearest", behavior: "smooth"});
-}
-
-window.addEventListener("message", (event) => {
-  const message = event.data;
-  if (event.source !== window || message?.source !== "course-studyspace-page" || message?.type !== "media-progress") return;
-  highlightTranscriptAtMediaProgress(message);
-});
-
-function activeCoursePlayer() {
-  return activeCourseSource?.mediaType === "video" ? courseVideoPlayer : courseAudioPlayer;
-}
-
-function publishCoursePlayerProgress(player, force = false) {
-  if (!activeCourseSource || player !== activeCoursePlayer()) return;
-  highlightTranscriptAtMediaProgress({
-    currentUrl: activeCourseSource.url,
-    currentTime: Number(player.currentTime) || 0,
-    paused: player.paused,
-    ended: player.ended,
-    force,
-  });
-}
-
-for (const player of [courseAudioPlayer, courseVideoPlayer]) {
-  player.addEventListener("timeupdate", () => publishCoursePlayerProgress(player));
-  player.addEventListener("seeking", () => publishCoursePlayerProgress(player, true));
-  player.addEventListener("seeked", () => publishCoursePlayerProgress(player, true));
-  player.addEventListener("play", () => {
-    playingAudio = player;
-    publishCoursePlayerProgress(player, true);
-  });
-  player.addEventListener("pause", () => publishCoursePlayerProgress(player, true));
-  player.addEventListener("ended", () => publishCoursePlayerProgress(player, true));
-}
-
-async function useCoursePlayer(source, localTime, shouldPlay = true) {
-  const player = source.mediaType === "video" ? courseVideoPlayer : courseAudioPlayer;
-  const other = player === courseVideoPlayer ? courseAudioPlayer : courseVideoPlayer;
-  if (!other.paused) other.pause();
-  courseVideoPlayer.hidden = player !== courseVideoPlayer;
-  courseAudioPlayer.hidden = player !== courseAudioPlayer;
-  activeCourseSource = source;
-  coursePlayerTitle.textContent = `${source.mediaType === "video" ? "视频" : "音频"} ${source.mediaIndex + 1} · ${formatTime(localTime)}`;
-  if (!sameMediaUrl(player.currentSrc || player.src, source.url)) {
-    player.src = source.url;
-    player.load();
-  }
-  const targetTime = Math.max(0, Number(localTime) || 0);
-  try { player.currentTime = targetTime; }
-  catch (_) {
-    await new Promise((resolve) => player.addEventListener("loadedmetadata", resolve, {once: true}));
-    player.currentTime = targetTime;
-  }
-  if (shouldPlay) await player.play();
-  return player;
-}
-
-async function clickLeftPlayerControl(point) {
-  const clicked = await chrome.runtime.sendMessage({type: "CLICK_PLAYER_CONTROL", x: point.x, y: point.y});
-  if (!clicked?.ok) throw new Error(clicked?.error || "无法控制左侧课程播放器");
-}
-
-async function alignLeftCourseMedia(targetUrl, timeoutMs) {
-  let state = await ensureLeftPlayerReady(timeoutMs);
-  if (sameMediaUrl(state.currentUrl, targetUrl)) return;
-  const index = await loadCourseAudioIndex();
-  let currentIndex = index.findIndex((item) => sameMediaUrl(item.url, state.currentUrl));
-  const targetIndex = index.findIndex((item) => sameMediaUrl(item.url, targetUrl));
-  if (currentIndex < 0 || targetIndex < 0 || !state.controlPoint) throw new Error("无法识别左侧当前媒体块");
-  const direction = targetIndex > currentIndex ? 1 : -1;
-  const navigationPoint = {x: state.controlPoint.x + direction * 105, y: state.controlPoint.y};
-  while (currentIndex !== targetIndex) {
-    const expectedIndex = currentIndex + direction;
-    await clickLeftPlayerControl(navigationPoint);
-    await new Promise((done) => setTimeout(done, 380));
-    state = await sendPageMediaCommand({action: "status"}, timeoutMs);
-    let observedIndex = index.findIndex((item) => sameMediaUrl(item.url, state.currentUrl));
-    if (observedIndex !== expectedIndex) {
-      await new Promise((done) => setTimeout(done, 420));
-      state = await sendPageMediaCommand({action: "status"}, timeoutMs);
-      observedIndex = index.findIndex((item) => sameMediaUrl(item.url, state.currentUrl));
-    }
-    if (observedIndex !== expectedIndex) throw new Error("左侧播放器没有切到相邻媒体块");
-    currentIndex = observedIndex;
-  }
-  if (!sameMediaUrl(state.currentUrl, targetUrl)) throw new Error("左侧播放器切换媒体块失败");
-}
-
-async function ensureLeftPlayerReady(timeoutMs) {
-  try {
-    return await sendPageMediaCommand({action: "status"}, timeoutMs);
-  } catch (error) {
-    if (!String(error?.message || error).includes("播放器尚未创建")) throw error;
-  }
-  const controls = await sendPageMediaCommand({action: "control"}, timeoutMs);
-  if (!controls.controlPoint) throw new Error("无法定位左侧课程播放器");
-  let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await clickLeftPlayerControl(controls.controlPoint);
-    await new Promise((done) => setTimeout(done, 650));
-    try { return await sendPageMediaCommand({action: "status"}, timeoutMs); }
-    catch (error) { lastError = error; }
-  }
-  throw new Error(lastError?.message || "左侧课程播放器自动启动失败");
-}
-
-async function stopSegmentPlayback(message = "已暂停") {
+function stopSegmentPlayback(message = "已暂停") {
   clearPlaybackStopControls();
-  if (playingAudio && !playingAudio.paused) playingAudio.pause();
+  playingAudio?.pause();
   playingSegment?.classList.remove("playing");
   playingSegment?.classList.remove("paused");
   playingAudio = null;
@@ -778,21 +574,18 @@ async function stopSegmentPlayback(message = "已暂停") {
   statusText.textContent = message;
 }
 
-function clearTranscriptPlaybackState(message = "正在定位媒体…") {
-  clearPlaybackStopControls();
-  playingSegment?.classList.remove("playing", "paused");
-  playingAudio = null;
-  playingSegment = null;
-  playingLocalEnd = null;
-  playingGlobalEnd = null;
-  statusText.textContent = message;
-}
-
 function scheduleSegmentStop(audio) {
   clearPlaybackStopControls();
+  const finish = () => {
+    if (playingAudio === audio && audio.currentTime >= playingLocalEnd - 0.08) {
+      stopSegmentPlayback(`本段播放完毕 ${formatTime(playingGlobalEnd)}`);
+    }
+  };
+  playbackEndHandler = finish;
+  audio.addEventListener("timeupdate", finish);
   const remainingMs = Math.max(100, (playingLocalEnd - audio.currentTime) / Math.max(audio.playbackRate, 0.1) * 1000);
   playbackStopTimer = setTimeout(() => {
-    if (playingAudio === audio) void stopSegmentPlayback(`本段播放完毕 ${formatTime(playingGlobalEnd)}`);
+    if (playingAudio === audio) stopSegmentPlayback(`本段播放完毕 ${formatTime(playingGlobalEnd)}`);
   }, remainingMs + 80);
 }
 
@@ -813,9 +606,7 @@ async function playAtSegment(item, element, segmentIndex) {
     statusText.textContent = `继续播放 ${formatTime(item.start)}`;
     return;
   }
-  // Cross-block navigation is a seek, not a pause. If Songy's left player is
-  // already playing, it continues playing after switching to the mapped block.
-  clearTranscriptPlaybackState("正在定位对应媒体…");
+  stopSegmentPlayback("正在定位音频…");
   const index = await loadCourseAudioIndex();
   let source = index.find((audio) => audio.contentId === Number(item.content_id));
   if (!source) {
@@ -825,7 +616,27 @@ async function playAtSegment(item, element, segmentIndex) {
   }
   if (!source?.url) throw new Error("这一段没有对应的音频");
   const localTime = Math.max(0, Number(item.start) - source.start);
-  const audio = await useCoursePlayer(source, localTime, true);
+  const fileName = decodeURIComponent(new URL(source.url).pathname.split("/").pop() || "");
+  const pageAudio = [...document.querySelectorAll("audio,video")].find((media) => {
+    const current = media.currentSrc || media.src || "";
+    return current === source.url || (fileName && decodeURIComponent(current).includes(fileName));
+  });
+  const audio = pageAudio || studyAudio || new Audio();
+  if (!pageAudio && audio.src !== source.url) {
+    audio.pause();
+    audio.src = source.url;
+    audio.preload = "auto";
+  }
+  studyAudio = pageAudio ? studyAudio : audio;
+  if (audio.readyState < 1) {
+    await new Promise((resolve, reject) => {
+      audio.addEventListener("loadedmetadata", resolve, {once: true});
+      audio.addEventListener("error", () => reject(new Error("音频载入失败")), {once: true});
+      audio.load();
+    });
+  }
+  audio.currentTime = localTime;
+  await audio.play();
   element.classList.add("playing");
   playingSegment = element;
   playingAudio = audio;
@@ -913,16 +724,6 @@ function handleCourseChange() {
   needsEnhancement = false;
   courseAudioIndex = null;
   currentCourseMetadata = {};
-  courseAudioPlayer.pause();
-  courseVideoPlayer.pause();
-  courseAudioPlayer.removeAttribute("src");
-  courseVideoPlayer.removeAttribute("src");
-  courseAudioPlayer.load();
-  courseVideoPlayer.load();
-  courseAudioPlayer.hidden = false;
-  courseVideoPlayer.hidden = true;
-  activeCourseSource = null;
-  coursePlayerTitle.textContent = "点击右侧文字稿即可播放对应位置";
   nativeTerminalGeneration += 1;
   clearTimeout(nativeTerminalPollTimer);
   nativeTerminalPollTimer = null;
@@ -933,7 +734,9 @@ function handleCourseChange() {
   nativeTerminal.write("\x1b[38;5;245m正在切换课程…\x1b[0m\r\n");
   terminalPath.textContent = "正在定位课程目录…";
   terminalPath.title = "";
-  void stopSegmentPlayback("已切换课程");
+  stopSegmentPlayback("已切换课程");
+  studyAudio?.pause();
+  studyAudio = null;
   playingSegment = null;
   restoreCategory();
   recordButton.disabled = false;
