@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+import tempfile
 import unittest
 from collections import deque
 from pathlib import Path
@@ -90,6 +91,12 @@ class NativeLauncherEnvironmentTests(unittest.TestCase):
 
 
 class ModelMemoryTests(unittest.TestCase):
+    def test_lightweight_server_does_not_import_mlx_at_startup(self):
+        source = (ROOT / "local_server.py").read_text(encoding="utf-8")
+        startup = source[:source.index("def model()")]
+        self.assertNotIn("import mlx_whisper", startup)
+        self.assertIn('importlib.import_module("mlx_whisper")', source)
+
     def test_accelerator_cache_is_explicitly_cleared(self):
         import runtime_resources
 
@@ -136,6 +143,24 @@ class EnhancementRetryTests(unittest.TestCase):
 
 
 class TerminalEnvironmentTests(unittest.TestCase):
+    def test_new_course_workspace_can_be_found_without_old_ledger_entry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            library = Path(temporary)
+            directory = library / "AI课-Agent版" / "courses" / "820-探索未知的认知工具"
+            directory.mkdir(parents=True)
+            (directory / "course.json").write_text(
+                '{"course_id":"820","title":"探索未知的认知工具","category":"AI课-Agent版"}',
+                encoding="utf-8",
+            )
+            original = course_pipeline.LIBRARY
+            course_pipeline.LIBRARY = library
+            try:
+                found, metadata = course_pipeline.find_archived_course_by_id(820)
+            finally:
+                course_pipeline.LIBRARY = original
+            self.assertEqual(found, directory)
+            self.assertEqual(metadata["course_id"], "820")
+
     def test_chrome_terminal_can_find_node_and_codex(self):
         child = terminal_bridge.build_terminal_environment({"HOME": "/Users/test", "PATH": "/usr/bin"})
         paths = child["PATH"].split(os.pathsep)
@@ -200,6 +225,14 @@ class ExtensionRegressionTests(unittest.TestCase):
     def test_reopening_course_loads_saved_transcript(self):
         self.assertIn("identifyCourseCategory().finally(loadTranscript)", self.content)
         self.assertIn("/transcript?url=", self.content)
+
+    def test_archived_new_course_classification_starts_terminal(self):
+        source = (ROOT / "local_server.py").read_text(encoding="utf-8")
+        endpoint = source[source.index('if parsed.path == "/course-classification"') :]
+        endpoint = endpoint[:endpoint.index('if parsed.path == "/corpus/dashboard"')]
+        self.assertGreaterEqual(endpoint.count("find_archived_course_by_id(course_number)"), 2)
+        self.assertIn('"found": True', endpoint)
+        self.assertIn('metadata.get("category", "")', endpoint)
 
     def test_switching_course_cancels_previous_terminal_poll(self):
         course_change = self.content[self.content.index("function handleCourseChange()") :]

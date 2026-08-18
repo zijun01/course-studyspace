@@ -73,6 +73,20 @@ def find_archived_course(url: str) -> tuple[Path | None, dict]:
     return None, {}
 
 
+def find_archived_course_by_id(course_number: int | str) -> tuple[Path | None, dict]:
+    """Find an archived lesson even when the older processing ledger lacks it."""
+    course_id = str(int(course_number))
+    for directory in LIBRARY.glob(f"*/courses/{course_id}-*"):
+        metadata_path = directory / "course.json"
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(metadata.get("course_id")) == course_id:
+            return directory, metadata
+    return None, {}
+
+
 def atomic_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as temp:

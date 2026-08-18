@@ -19,17 +19,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-try:
-    import mlx_whisper
-except (ImportError, RuntimeError):
-    mlx_whisper = None
+# MLX initializes Metal while importing. Keep the lightweight HTTP/terminal
+# service independent from the transcription engine and load MLX only when a
+# transcription request actually starts.
+mlx_whisper = None
+_mlx_whisper_checked = False
 
 try:
     import whisper
 except ImportError:
     whisper = None
 from codex_bridge import bridge as codex_bridge
-from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course, validate_transcription_payload
+from course_pipeline import CATEGORIES, archive_and_enhance, archive_raw, audio_character_count, find_archived_course, find_archived_course_by_id, validate_transcription_payload
 from terminal_bridge import bridge as terminal_bridge
 from runtime_resources import release_accelerator_cache
 
@@ -101,6 +102,17 @@ def model():
     return _model
 
 
+def mlx_transcriber():
+    global mlx_whisper, _mlx_whisper_checked
+    if not _mlx_whisper_checked:
+        _mlx_whisper_checked = True
+        try:
+            mlx_whisper = importlib.import_module("mlx_whisper")
+        except (ImportError, RuntimeError):
+            mlx_whisper = None
+    return mlx_whisper
+
+
 def release_transcription_memory():
     """Drop Whisper references and Metal caches without stopping the terminal."""
     global _model
@@ -111,7 +123,8 @@ def release_transcription_memory():
 
 def transcribe_audio(path: Path, progress=None) -> tuple[dict, str]:
     """Prefer Apple Metal via MLX; retain the former CPU Whisper as a fallback."""
-    if mlx_whisper is not None and MLX_MODEL_PATH.exists():
+    mlx_engine = mlx_transcriber() if MLX_MODEL_PATH.exists() else None
+    if mlx_engine is not None:
         transcribe_module = None
         original_tqdm = None
         try:
@@ -128,7 +141,7 @@ def transcribe_audio(path: Path, progress=None) -> tuple[dict, str]:
                         return result
 
                 transcribe_module.tqdm.tqdm = ProgressTqdm
-            result = mlx_whisper.transcribe(
+            result = mlx_engine.transcribe(
                 str(path), path_or_hf_repo=str(MLX_MODEL_PATH), language="zh", verbose=None
             )
             if progress:
@@ -827,7 +840,11 @@ def course_workspace(course_number: int) -> tuple[Path | None, dict]:
         for course in column["courses"]:
             if int(course.get("course_id")) == course_number:
                 directory, metadata = find_archived_course(course.get("source_url", ""))
-                return directory, {**course, **metadata, "final_category": column["category"]}
+                if directory:
+                    return directory, {**course, **metadata, "final_category": column["category"]}
+    directory, metadata = find_archived_course_by_id(course_number)
+    if directory:
+        return directory, {**metadata, "final_category": metadata.get("category", "")}
     return None, {}
 
 
@@ -1119,6 +1136,8 @@ class Handler(BaseHTTPRequestHandler):
                     course = next((item for item in column["courses"] if int(item.get("course_id")) == course_number), None)
                     if course:
                         workspace_dir, _ = find_archived_course(course.get("source_url", ""))
+                        if not workspace_dir:
+                            workspace_dir, _ = find_archived_course_by_id(course_number)
                         workspace_path = str(workspace_dir) if workspace_dir else ""
                         if workspace_path.startswith(str(Path.home())):
                             workspace_path = "~" + workspace_path[len(str(Path.home())):]
@@ -1132,6 +1151,21 @@ class Handler(BaseHTTPRequestHandler):
                             "categories": [item["category"] for item in board["columns"]],
                         })
                         return
+                workspace_dir, metadata = find_archived_course_by_id(course_number)
+                if workspace_dir:
+                    workspace_path = str(workspace_dir)
+                    if workspace_path.startswith(str(Path.home())):
+                        workspace_path = "~" + workspace_path[len(str(Path.home())):]
+                    self._json({
+                        "found": True,
+                        "course_id": course_number,
+                        "category": metadata.get("category", ""),
+                        "title": metadata.get("title") or workspace_dir.name,
+                        "album_title": metadata.get("album_title", ""),
+                        "workspace_path": workspace_path,
+                        "categories": [item["category"] for item in board["columns"]],
+                    })
+                    return
                 self._json({"found": False, "course_id": course_number, "categories": [item["category"] for item in board["columns"]]})
             except (ValueError, OSError, json.JSONDecodeError) as exc:
                 self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
@@ -1152,7 +1186,7 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/health":
             self._json({
                 "ok": True, "model": MODEL_NAME,
-                "engine": "mlx-whisper-local" if mlx_whisper is not None else "openai-whisper-local",
+                "engine": "mlx-whisper-local" if MLX_MODEL_PATH.exists() else "openai-whisper-local",
                 "model_loaded": _model is not None,
             })
             return
